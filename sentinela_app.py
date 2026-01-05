@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml, gerar_excel_final
 # 1. Configuração da Página
 st.set_page_config(page_title="Sentinela - Auditoria Fiscal", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Estilo CSS Sentinela
+# 2. Estilo CSS Sentinela (Versão Protegida)
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -58,23 +58,12 @@ with st.sidebar:
             f_ncm = wb.add_format({'bg_color': '#444444', 'font_color': 'white', 'bold': True, 'border': 1})
             f_lar_e = wb.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
             f_lar_c = wb.add_format({'bg_color': '#FFB74D', 'font_color': 'white', 'bold': True, 'border': 1})
-            f_cin_c = wb.add_format({'bg_color': '#E0E0E0', 'font_color': 'black', 'bold': True, 'border': 1})
-            
-            # ICMS
-            cols_icms = ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)"]
-            pd.DataFrame(columns=cols_icms).to_excel(writer, sheet_name='ICMS', index=False)
-            for c, v in enumerate(cols_icms): writer.sheets['ICMS'].write(0, c, v, f_ncm if c == 0 else f_lar_e)
-            
-            # PIS_COFINS
-            cols_pc = ["NCM", "CST Entrada", "CST Saída"]
-            pd.DataFrame(columns=cols_pc).to_excel(writer, sheet_name='PIS_COFINS', index=False)
-            for c, v in enumerate(cols_pc): writer.sheets['PIS_COFINS'].write(0, c, v, f_ncm if c == 0 else f_lar_c)
-            
-            # IPI
-            cols_ipi = ["NCM", "CST_IPI", "ALQ_IPI"]
-            pd.DataFrame(columns=cols_ipi).to_excel(writer, sheet_name='IPI', index=False)
-            for c, v in enumerate(cols_ipi): writer.sheets['IPI'].write(0, c, v, f_ncm if c == 0 else f_cin_c)
-            
+            f_cin_c = wb.add_format({'bg_color': '#E0E0E0', 'bold': True, 'border': 1})
+            for s, cols, fmt in [('ICMS', ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)"], f_lar_e),
+                                 ('PIS_COFINS', ["NCM", "CST Entrada", "CST Saída"], f_lar_c),
+                                 ('IPI', ["NCM", "CST_IPI", "ALQ_IPI"], f_cin_c)]:
+                pd.DataFrame(columns=cols).to_excel(writer, sheet_name=s, index=False)
+                for c, v in enumerate(cols): writer.sheets[s].write(0, c, v, f_ncm if c == 0 else fmt)
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_base.xlsx", use_container_width=True)
 
@@ -89,20 +78,20 @@ if cod_cliente:
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v58")
-        ge = st.file_uploader("Gerencial", type=['csv'], key="ge_v58")
-        ae = st.file_uploader("Autenticidade", type=['xlsx', 'csv'], key="ae_v58")
+        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v61")
+        ge = st.file_uploader("Gerencial", type=['csv'], key="ge_v61")
+        ae = st.file_uploader("Autenticidade", type=['xlsx', 'csv'], key="ae_v61")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v58")
-        gs = st.file_uploader("Gerencial", type=['csv'], key="gs_v58")
-        as_f = st.file_uploader("Autenticidade", type=['xlsx', 'csv'], key="as_v58")
+        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v61")
+        gs = st.file_uploader("Gerencial", type=['csv'], key="gs_v61")
+        as_f = st.file_uploader("Autenticidade", type=['xlsx', 'csv'], key="as_v61")
 
     if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 O Sentinela está auditando tudo..."):
+        with st.spinner("🧡 O Sentinela está auditando com precisão..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
-                st.success("Tudo pronto! 🧡")
+                st.success("Auditoria Concluída com Sucesso! 🧡")
                 st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
             except Exception as e: st.error(f"Erro: {e}")
