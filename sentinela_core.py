@@ -32,8 +32,7 @@ def extrair_dados_xml(files):
                 prod = det.find('prod'); imp = det.find('imposto')
                 linha = {
                     "CHAVE_ACESSO": chave, 
-                    "NCM_XML": re.sub(r'\D', '', prod.find('NCM').text).zfill(8) if prod.find('NCM') is not None else "",
-                    "CST_ICMS_XML": "", "ALIQ_ICMS_XML": 0.0
+                    "NCM_XML": re.sub(r'\D', '', prod.find('NCM').text).zfill(8) if prod.find('NCM') is not None else ""
                 }
                 if imp is not None:
                     icms = imp.find('.//ICMS')
@@ -51,6 +50,37 @@ def gerar_excel_final(df_xe, df_xs, b_unica, ae, as_f, ge, gs, cod_cliente=""):
     avisos = [] 
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # --- ABA 1: MANUAL DE INSTRUÇÕES ---
+        df_manual = pd.DataFrame({
+            "Aba": ["MANUAL", "RESUMO", "AUDITORIA_ENTRADA", "AUDITORIA_SAIDA", "GERENCIAL", "AUTENTICIDADE"],
+            "Descrição": [
+                "Manual de instruções do relatório (esta aba).",
+                "Status geral da auditoria e avisos de processamento.",
+                "Cruzamento de XMLs de Entrada com a Base Tributária (Validação de CST).",
+                "Cruzamento de XMLs de Saída com a Base Tributária (Validação de CST).",
+                "Dados espelhados do Relatório Gerencial (CSV).",
+                "Dados espelhados das planilhas de Protocolos de Autenticidade."
+            ],
+            "Observação": [
+                "Sempre a primeira aba para orientação.",
+                "Verifique aqui se houve falha na busca da base.",
+                "Coluna 'CHECK_CST' indica conformidade.",
+                "Coluna 'CHECK_CST' indica conformidade.",
+                "Importado conforme fornecido.",
+                "Importado conforme fornecido."
+            ]
+        })
+        df_manual.to_excel(writer, sheet_name='MANUAL', index=False)
+
+        # Configurações de layout do Manual
+        workbook = writer.book
+        worksheet = writer.sheets['MANUAL']
+        header_format = workbook.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
+        for col_num, value in enumerate(df_manual.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+        worksheet.set_column('A:C', 30)
+
+        # --- RESTANTE DAS ABAS ---
         if base_final and (not df_xe.empty or not df_xs.empty):
             try:
                 df_icms_b = pd.read_excel(base_final, sheet_name='ICMS')
@@ -61,10 +91,10 @@ def gerar_excel_final(df_xe, df_xs, b_unica, ae, as_f, ge, gs, cod_cliente=""):
                     df_res.to_excel(writer, sheet_name=aba, index=False)
                 analisar(df_xe, 'AUDITORIA_ENTRADA')
                 analisar(df_xs, 'AUDITORIA_SAIDA')
-            except: avisos.append("Erro ao ler abas da Base Tributária.")
+            except: avisos.append("Erro ao processar tabelas da base.")
         else:
-            if not base_final: avisos.append(f"Aviso: Base tributária {cod_cliente} não localizada.")
-            if df_xe.empty and df_xs.empty: avisos.append("Aviso: Nenhum XML enviado.")
+            if not base_final: avisos.append(f"Base {cod_cliente} não encontrada.")
+            if df_xe.empty and df_xs.empty: avisos.append("Nenhum XML fornecido.")
 
         if ge: 
             try: pd.read_csv(ge, sep=None, engine='python').to_excel(writer, sheet_name='GERENCIAL_ENT', index=False)
@@ -75,6 +105,6 @@ def gerar_excel_final(df_xe, df_xs, b_unica, ae, as_f, ge, gs, cod_cliente=""):
         if ae: pd.read_excel(ae).to_excel(writer, sheet_name='AUTENTICIDADE_ENT', index=False)
         if as_f: pd.read_excel(as_f).to_excel(writer, sheet_name='AUTENTICIDADE_SAI', index=False)
 
-        pd.DataFrame({"Mensagens": avisos if avisos else ["Sucesso"]}).to_excel(writer, sheet_name='STATUS', index=False)
+        pd.DataFrame({"STATUS": avisos if avisos else ["Sucesso"]}).to_excel(writer, sheet_name='RESUMO', index=False)
             
     return output.getvalue()
