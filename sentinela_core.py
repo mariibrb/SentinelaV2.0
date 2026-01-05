@@ -79,12 +79,12 @@ def extrair_dados_xml(files):
                     "VLR-ICMS": safe_float(buscar_recursivo(imp, ['vICMS'])),
                     "VLR-ICMS-ST": safe_float(buscar_recursivo(imp, ['vICMSST'])),
                     "CST-PIS": buscar_recursivo(imp.find('.//PIS'), ['CST']) if imp.find('.//PIS') is not None else "",
-                    "VAL-PIS": safe_float(buscar_recursivo(imp, ['vPIS'])),
+                    "VAL-PIS": safe_float(buscar_recursivo(imp.find('.//PIS'), ['vPIS'])),
                     "CST-COF": buscar_recursivo(imp.find('.//COFINS'), ['CST']) if imp.find('.//COFINS') is not None else "",
-                    "VAL-COF": safe_float(buscar_recursivo(imp, ['vCOFINS'])),
+                    "VAL-COF": safe_float(buscar_recursivo(imp.find('.//COFINS'), ['vCOFINS'])),
                     "CST-IPI": buscar_recursivo(imp.find('.//IPI'), ['CST']) if imp.find('.//IPI') is not None else "",
-                    "ALQ-IPI": safe_float(buscar_recursivo(imp, ['pIPI'])),
-                    "VAL-IPI": safe_float(buscar_recursivo(imp, ['vIPI'])),
+                    "ALQ-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['pIPI'])),
+                    "VAL-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['vIPI'])),
                     "VAL-DIFAL": safe_float(buscar_recursivo(imp, ['vICMSUFDest']))
                 }
                 dados_lista.append(linha)
@@ -102,11 +102,12 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         man_l = [
-            ["SENTINELA - MANUAL MAXIMALISTA DE AUDITORIA FISCAL"], [""],
-            ["1. GERENCIAIS: Auditoria de estoque e valores unitários via arquivos CSV."],
-            ["2. CST 10: Valida se há destaque de ICMS-ST para o CST 10."],
-            ["3. CROSS-CHECK CFOP: Identifica conflitos de operação ST com CFOP Normal."],
-            ["4. ESPELHO DE TAGS: Todas as bases e alíquotas extraídas aparecem no relatório."]
+            ["SENTINELA - AUDITORIA MAXIMALISTA COMPLETA"], [""],
+            ["1. ABAS: ICMS, PIS/COFINS, IPI e DIFAL auditadas."],
+            ["2. CST 10: Verifica destaque de ICMS-ST e conformidade de CFOP."],
+            ["3. GERENCIAIS: Cruzamento de dados CSV com XMLs."],
+            ["4. REGRA 4%: Alíquota interestadual travada para importados."],
+            ["5. AUTENTICIDADE: Cruzamento rígido via Chave (Col A) e Status (Col F)."]
         ]
         pd.DataFrame(man_l).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
 
@@ -122,34 +123,50 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
         df_xs = cruzar_aut(df_xs, as_f)
 
         if not df_xs.empty:
-            # --- ABA ICMS MAXIMALISTA ---
+            # --- ICMS ---
+            
             df_i = df_xs.copy(); ncm_st = df_ent[(df_ent['CST-ICMS']=="60")]['NCM'].unique().tolist() if not df_ent.empty else []
             def audit_icms(row):
                 info = base_icms[base_icms['NCM_KEY'] == row['NCM']]
                 sit = row.get('Situação Nota', '⚠️ N/V')
                 cfop_st = ['5401', '5403', '5405', '6401', '6403', '6404']
                 diag_cross = "✅ CFOP/CST OK"
-                if row['CFOP'] in cfop_st and row['CST-ICMS'] in ['00', '20']: diag_cross = "❌ Erro: CFOP ST c/ CST Tributado"
-                if row['CST-ICMS'] == '10' and row['VLR-ICMS-ST'] == 0: diag_cross = "❌ Alerta: CST 10 sem destaque de ST"
+                if row['CFOP'] in cfop_st and row['CST-ICMS'] in ['00', '20']: diag_cross = "❌ Conflito: CFOP ST com CST Trib"
+                if row['CST-ICMS'] == '10' and row['VLR-ICMS-ST'] == 0: diag_cross = "❌ Alerta: CST 10 sem destaque ST"
                 
-                val_github = safe_float(info['ALÍQUOTA'].iloc[0]) if not info.empty and 'ALÍQUOTA' in info.columns else None
+                val_git = safe_float(info['ALÍQUOTA'].iloc[0]) if not info.empty and 'ALÍQUOTA' in info.columns else None
                 if row['UF_EMIT'] != row['UF_DEST']:
                     alq_esp = 4.0 if str(row['ORIGEM']) in ['1', '2', '3', '8'] else 12.0
                 else:
-                    alq_esp = val_github if val_github is not None else ALIQUOTAS_UF.get(row['UF_EMIT'], 18.0)
-                
+                    alq_esp = val_git if val_git is not None else ALIQUOTAS_UF.get(row['UF_EMIT'], 18.0)
                 diag_alq = "✅ Alq OK" if abs(row['ALQ-ICMS'] - alq_esp) < 0.01 else f"❌ XML {row['ALQ-ICMS']}% diverge de {alq_esp}%"
                 comp = max(0, (alq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100)
                 return pd.Series([sit, diag_cross, diag_alq, f"R$ {comp:,.2f}"])
-            
             df_i[['Situação Nota', 'Cross-Check CFOP/CST', 'Diagnóstico ICMS', 'Complemento ICMS']] = df_i.apply(audit_icms, axis=1)
             df_i['Carga Efetiva (%)'] = ((df_i['VLR-ICMS'] + df_i['VAL-PIS'] + df_i['VAL-COF'] + df_i['VAL-IPI']) / df_i['VPROD'] * 100).round(2)
             df_i.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # --- DEMAIS ABAS ---
-            
-            df_xs.to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
-            df_xs.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
+            # --- PIS/COFINS ---
+            df_pc = df_xs.copy()
+            def audit_pc(row):
+                info = base_pc[base_pc['NCM_KEY'] == row['NCM']]
+                if info.empty: return "❌ NCM ausente na Base"
+                cst_b = str(info['CST_BASE'].iloc[0]).zfill(2)
+                return "✅ CST OK" if row['CST-PIS'] == cst_b else f"❌ XML {row['CST-PIS']} (Base {cst_b})"
+            df_pc['Diagnóstico PIS/COF'] = df_pc.apply(audit_pc, axis=1)
+            df_pc.to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
+
+            # --- IPI ---
+            df_ip = df_xs.copy()
+            def audit_ipi(row):
+                info = base_ipi[base_ipi['NCM_KEY'] == row['NCM']]
+                if info.empty: return "❌ NCM ausente na Base"
+                alq_b = safe_float(info['ALÍQUOTA'].iloc[0])
+                return "✅ Alq OK" if abs(row['ALQ-IPI'] - alq_b) < 0.01 else f"❌ XML {row['ALQ-IPI']}% (Base {alq_b}%)"
+            df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
+            df_ip.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
+
+            # --- DIFAL ---
             df_xs.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
     return output.getvalue()
