@@ -53,12 +53,10 @@ def extrair_dados_xml(files):
                     tag_limpa = elem.tag.split('}')[-1]
                     if tag_limpa in tags_alvo: return elem.text
                 return ""
-
             inf = root.find('.//infNFe'); chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
             emit = root.find('.//emit'); dest = root.find('.//dest')
             uf_e = emit.find('.//UF').text if emit is not None else ""
             uf_d = dest.find('.//UF').text if dest is not None else ""
-
             for det in root.findall('.//det'):
                 prod = det.find('prod'); imp = det.find('imposto')
                 icms_node = imp.find('.//ICMS') if imp is not None else None
@@ -108,8 +106,9 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
             ["1. PRIORIDADE GITHUB: NCMs na base do cliente têm precedência absoluta."],
             ["2. REGRA GERAL ICMS: Fallback por UF quando o NCM está vazio."],
             ["3. REGRA GERAL IPI: Utiliza a TIPI padrão enviada para NCMs vazios."],
-            ["4. CST 10 / ST: Auditoria de destaque e conflito de CFOP."],
-            ["5. PIS/COFINS: Confronto de CST por NCM."]
+            ["4. CST 10 / ST: Auditoria de destaque e conformidade de CFOP."],
+            ["5. PIS/COFINS: Confronto de CST por NCM."],
+            ["6. GERENCIAIS E AUTENTICIDADE: Processamento integral."]
         ]
         pd.DataFrame(man_l).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
 
@@ -134,21 +133,17 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
                 diag_st = "✅ OK"
                 if row['CST-ICMS'] == '10' and row['VLR-ICMS-ST'] == 0: diag_st = "❌ Alerta: CST 10 sem destaque ST"
                 if row['CFOP'] in cfop_st and row['CST-ICMS'] in ['00', '20']: diag_st = "❌ Conflito: CFOP ST com CST Trib"
-                
                 val_git = safe_float(info['ALIQ (INTERNA)'].iloc[0]) if not info.empty else None
                 if val_git is None:
                     if row['UF_EMIT'] != row['UF_DEST']:
                         alq_esp = 4.0 if str(row['ORIGEM']) in ['1', '2', '3', '8'] else 12.0
                     else: alq_esp = ALIQUOTAS_UF.get(row['UF_EMIT'], 18.0)
                 else: alq_esp = val_git
-
                 alq_xml = row['ALQ-ICMS'] or 0.0
                 diag_alq = "✅ Alq OK" if abs(alq_xml - alq_esp) < 0.01 else f"❌ XML {alq_xml}% vs {alq_esp}%"
                 comp = max(0, (alq_esp - alq_xml) * row['BC-ICMS'] / 100)
                 return pd.Series([sit, diag_st, diag_alq, f"R$ {comp:,.2f}"])
-            
             df_i[['Situação Nota', 'Check ST', 'Diagnóstico ICMS', 'Complemento ICMS']] = df_i.apply(audit_icms, axis=1)
-            # FIX: Cálculo de Carga Efetiva com segurança contra divisão por zero e 'row' não definido
             df_i['Carga Efetiva (%)'] = ((df_i['VLR-ICMS'] + df_i['VAL-PIS'] + df_i['VAL-COF'] + df_i['VAL-IPI']) / df_i['VPROD'].replace(0, 1) * 100).round(2)
             df_i.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
@@ -174,5 +169,10 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
                 return "✅ Alq OK" if abs(alq_xml - alq_esp) < 0.01 else f"❌ XML {alq_xml}% vs TIPI {alq_esp}%"
             df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
             df_ip.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
+
+            # --- DIFAL ---
+            df_dif = df_xs.copy()
+            df_dif['Check DIFAL'] = df_dif.apply(lambda r: "⚠️ Faltando DIFAL" if r['UF_EMIT'] != r['UF_DEST'] and r['VAL-DIFAL'] == 0 else "✅ OK", axis=1)
+            df_dif.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
     return output.getvalue()
