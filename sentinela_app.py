@@ -54,7 +54,6 @@ with st.sidebar:
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             wb = writer.book
             f_header = wb.add_format({'bg_color': '#7F7F7F', 'font_color': '#CCECFF', 'bold': True, 'border': 1})
-            # Estrutura baseada nos CSVs originais do usuário
             pd.DataFrame(columns=["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)"]).to_excel(writer, sheet_name='ICMS', index=False)
             pd.DataFrame(columns=["NCM", "CST Entrada", "CST Saída"]).to_excel(writer, sheet_name='PIS_COFINS', index=False)
             pd.DataFrame(columns=["NCM_TIPI", "EX", "DESCRIÇÃO", "ALÍQUOTA (%)"]).to_excel(writer, sheet_name='IPI', index=False)
@@ -69,14 +68,14 @@ if cod_cliente:
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs Entrada", type='xml', accept_multiple_files=True, key="xe_vfinal")
-        ge = st.file_uploader("Gerencial Entrada", type=['csv'], key="ge_vfinal")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_vfinal")
+        xe = st.file_uploader("XMLs Entrada", type='xml', accept_multiple_files=True, key="xe_v109")
+        ge = st.file_uploader("Gerencial Entrada", type=['csv'], key="ge_v109")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v109")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs Saída", type='xml', accept_multiple_files=True, key="xs_vfinal")
-        gs = st.file_uploader("Gerencial Saída", type=['csv'], key="gs_vfinal")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_vfinal")
+        xs = st.file_uploader("XMLs Saída", type='xml', accept_multiple_files=True, key="xs_v109")
+        gs = st.file_uploader("Gerencial Saída", type=['csv'], key="gs_v109")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v109")
 
     if st.button("🚀 GERAR RELATÓRIO"):
         with st.spinner("🧡 Sentinela processando motor maximalista total..."):
