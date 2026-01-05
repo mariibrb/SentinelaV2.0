@@ -15,6 +15,10 @@ st.markdown("""
     .stApp { background-color: #F7F7F7; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 2px solid #FF6F00; }
     h1, h2, h3 { color: #FF6F00 !important; font-weight: 700; text-align: center; }
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(img) {
+        display: flex !important; justify-content: center !important; width: 100% !important;
+    }
+    .stButton { display: flex !important; justify-content: center !important; width: 100% !important; margin-top: 20px !important; }
     .stButton > button {
         background-color: #FF6F00 !important; color: white !important; border-radius: 25px !important;
         font-weight: bold !important; width: 300px !important; height: 50px !important; border: none !important;
@@ -65,20 +69,20 @@ if cod_cliente:
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs Entrada", type='xml', accept_multiple_files=True, key="xe_v85")
-        ge = st.file_uploader("Gerencial Entrada", type=['csv'], key="ge_v85")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx'], key="ae_v85")
+        xe = st.file_uploader("XMLs Entrada", type='xml', accept_multiple_files=True, key="xe_v88")
+        ge = st.file_uploader("Gerencial Entrada", type=['csv'], key="ge_v88")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v88")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs Saída", type='xml', accept_multiple_files=True, key="xs_v85")
-        gs = st.file_uploader("Gerencial Saída", type=['csv'], key="gs_v85")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx'], key="as_v85")
+        xs = st.file_uploader("XMLs Saída", type='xml', accept_multiple_files=True, key="xs_v88")
+        gs = st.file_uploader("Gerencial Saída", type=['csv'], key="gs_v88")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v88")
 
-    if st.button("🚀 EXECUTAR AUDITORIA MAXIMALISTA"):
-        with st.spinner("🧡 Sentinela executando auditoria profunda..."):
+    if st.button("🚀 GERAR RELATÓRIO"):
+        with st.spinner("🧡 Sentinela auditando situação e tributação..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
-                st.success("Auditoria Concluída!")
-                st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                st.success("Auditoria Concluída! 🧡")
+                st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
             except Exception as e: st.error(f"Erro Crítico: {e}")
