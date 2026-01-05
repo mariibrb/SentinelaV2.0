@@ -11,6 +11,7 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 2px solid #FF6F00; }
     h1, h2, h3 { color: #FF6F00 !important; font-weight: 700; text-align: center; }
     .stButton>button { background-color: #FF6F00; color: white; border-radius: 20px; font-weight: bold; width: 100%; height: 50px; border: none; }
+    .stFileUploader { border: 1px dashed #FF6F00; border-radius: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,15 +39,15 @@ st.markdown("---")
 col_e, col_s = st.columns(2, gap="large")
 
 with col_e:
-    st.subheader("📥 FLUXO ENTRADAS") # Sem coração aqui
+    st.subheader("📥 FLUXO ENTRADAS")
     xe = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key="xe")
-    ge = st.file_uploader("📊 Gerencial Entrada (CSV)", type=['csv'], key="ge") # Campo Gerencial restaurado
+    ge = st.file_uploader("📊 Gerencial Entrada (CSV)", type=['csv'], key="ge")
     ae = st.file_uploader("🔍 Autenticidade Entrada (XLSX)", type=['xlsx'], key="ae")
 
 with col_s:
-    st.subheader("📤 FLUXO SAÍDAS") # Sem coração aqui
+    st.subheader("📤 FLUXO SAÍDAS")
     xs = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key="xs")
-    gs = st.file_uploader("📊 Gerencial Saída (CSV)", type=['csv'], key="gs") # Campo Gerencial restaurado
+    gs = st.file_uploader("📊 Gerencial Saída (CSV)", type=['csv'], key="gs")
     as_f = st.file_uploader("🔍 Autenticidade Saída (XLSX)", type=['xlsx'], key="as")
 
 if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary"):
@@ -54,10 +55,7 @@ if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary"):
         try:
             df_xe = extrair_dados_xml(xe)
             df_xs = extrair_dados_xml(xs)
-            
-            # Passando XMLs, Gerenciais, Bases e Autenticidade para o motor
             relat = gerar_excel_final(df_xe, df_xs, u_icms, u_pc, ae, as_f, ge, gs)
-            
             st.success("Auditoria concluída! 🧡")
             st.download_button("💾 BAIXAR RELATÓRIO", relat, "Auditoria_Sentinela.xlsx", use_container_width=True)
         except Exception as e:
