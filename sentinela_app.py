@@ -4,48 +4,44 @@ import requests
 from sentinela_core import extrair_dados_xml, gerar_excel_final
 
 # 1. Configuração da Página
-st.set_page_config(page_title="Sentinela Nascel", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sentinela - Auditoria Fiscal", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Estilo CSS Nascel (Centralização Real e Botão no Eixo)
+# 2. Estilo CSS Sentinela (Botão Total e Remoção de Logos Terceiros)
 st.markdown("""
 <style>
     .stApp { background-color: #F7F7F7; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 2px solid #FF6F00; }
     h1, h2, h3 { color: #FF6F00 !important; font-weight: 700; text-align: center; }
 
-    /* Centralização das Logos na Sidebar */
+    /* Centralização da Logo Sentinela na Sidebar */
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(img) {
         display: flex !important;
         justify-content: center !important;
         width: 100% !important;
     }
 
-    /* Centralização do Botão entre Colunas */
-    .centralizar-botao {
-        display: flex;
-        justify-content: center;
-        width: 100%;
-        padding-top: 20px;
-    }
-    
+    /* Botão Ocupando Toda a Parte Inferior */
     .stButton > button {
         background-color: #FF6F00 !important;
         color: white !important;
-        border-radius: 25px !important;
+        border-radius: 10px !important;
         font-weight: bold !important;
-        width: 300px !important;
-        height: 50px !important;
+        width: 100% !important; /* Ocupa toda a largura disponível */
+        height: 60px !important;
         border: none !important;
+        font-size: 1.2rem !important;
+        margin-top: 20px !important;
+        box-shadow: 0 4px 10px rgba(255, 111, 0, 0.3) !important;
     }
     .stButton > button:hover { 
         background-color: #E65100 !important; 
-        transform: scale(1.02) !important; 
+        transform: translateY(-2px) !important; 
     }
     
     /* Passos Delicados com Pesinhos Cinzas */
     .passo-container {
         background-color: #FFFFFF;
-        padding: 8px 15px;
+        padding: 10px 15px;
         border-radius: 10px;
         border-left: 5px solid #FF6F00;
         margin: 10px auto 15px auto;
@@ -53,7 +49,7 @@ st.markdown("""
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         text-align: center;
     }
-    .passinho { color: #808080 !important; font-size: 1.1rem; margin-right: 10px; }
+    .passinho { color: #808080 !important; font-size: 1.2rem; margin-right: 10px; }
     .passo-texto { color: #FF6F00; font-size: 1.1rem; font-weight: 700; }
 
     .stFileUploader section { background-color: #FFFFFF; border: 1px dashed #FF6F00 !important; border-radius: 12px !important; }
@@ -74,15 +70,14 @@ def listar_empresas_no_github():
     except: pass
     return []
 
-# --- 3. SIDEBAR ---
+# --- 3. SIDEBAR (Apenas Sentinela e Gabaritos) ---
 with st.sidebar:
+    # Apenas a sua logo
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
-    if os.path.exists(".streamlit/nascel sem fundo.png"):
-        st.image(".streamlit/nascel sem fundo.png", width=140)
     
     st.markdown("---")
-    st.subheader("📥 Gabaritos")
+    st.subheader("📥 Materiais de Apoio")
     
     def criar_gabarito_nascel():
         output = io.BytesIO()
@@ -100,43 +95,41 @@ with st.sidebar:
             for c, v in enumerate(cols_pc): writer.sheets['PIS_COFINS'].write(0, c, v, f_ncm if c == 0 else f_cin_c)
         return output.getvalue()
 
-    st.download_button("📥 Baixar Gabarito", criar_gabarito_nascel(), "gabarito_nascel.xlsx", use_container_width=True)
+    st.download_button("📥 Baixar Gabarito de Base", criar_gabarito_nascel(), "gabarito_base.xlsx", use_container_width=True)
     st.markdown("---")
-    st.subheader("🔄 Base de Referência")
-    if st.file_uploader("Upload da Base", type=['xlsx'], key='base_construcao'): 
-        st.error("🚧 CAMPO EM CONSTRUÇÃO")
+    st.subheader("🔄 Ferramentas")
+    if st.file_uploader("Importar Base Complementar", type=['xlsx'], key='base_construcao'): 
+        st.error("🚧 Recurso em desenvolvimento.")
 
 # --- 4. TELA PRINCIPAL ---
 
 # PASSO 1
-st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 1: Selecione o cliente</span></div>", unsafe_allow_html=True)
+st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 1: Selecionar Empresa</span></div>", unsafe_allow_html=True)
 col_c = st.columns([1, 1.5, 1])
 with col_c[1]:
-    cod_cliente = st.selectbox("Lista de empresas:", [""] + listar_empresas_no_github(), label_visibility="collapsed")
+    cod_cliente = st.selectbox("Selecione o código do cliente:", [""] + listar_empresas_no_github(), label_visibility="collapsed")
 
 if cod_cliente:
     # PASSO 2
-    st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 2: Inclua os arquivos disponíveis</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 2: Carregar Documentos</span></div>", unsafe_allow_html=True)
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v27")
-        ge = st.file_uploader("Gerencial", type=['csv'], key="ge_v27")
-        ae = st.file_uploader("Autenticidade", type=['xlsx'], key="ae_v27")
+        xe = st.file_uploader("Notas Fiscais (XML)", type='xml', accept_multiple_files=True, key="xe_v28")
+        ge = st.file_uploader("Relatório Gerencial (CSV)", type=['csv'], key="ge_v28")
+        ae = st.file_uploader("Protocolos Autenticidade", type=['xlsx'], key="ae_v28")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v27")
-        gs = st.file_uploader("Gerencial", type=['csv'], key="gs_v27")
-        as_f = st.file_uploader("Autenticidade", type=['xlsx'], key="as_v27")
+        xs = st.file_uploader("Notas Fiscais (XML)", type='xml', accept_multiple_files=True, key="xs_v28")
+        gs = st.file_uploader("Relatório Gerencial (CSV)", type=['csv'], key="gs_v28")
+        as_f = st.file_uploader("Protocolos Autenticidade", type=['xlsx'], key="as_v28")
 
-    # BOTÃO CENTRALIZADO ABAIXO DAS COLUNAS
-    st.markdown("<div class='centralizar-botao'>", unsafe_allow_html=True)
+    # BOTÃO TOTAL ABAIXO DOS UPLOADS
     if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 O Sentinela está cruzando os dados..."):
+        with st.spinner("🧡 O Sentinela está auditando os dados..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, None, ae, as_f, ge, gs, cod_cliente)
-                st.success("Relatório pronto! 🧡")
-                st.download_button("💾 BAIXAR AGORA", relat, f"Relatorio_{cod_cliente}.xlsx", use_container_width=True)
-            except Exception as e: st.error(f"Erro: {e}")
-    st.markdown("</div>", unsafe_allow_html=True)
+                st.success("Auditoria finalizada com sucesso! 🧡")
+                st.download_button("💾 BAIXAR AGORA", relat, f"Auditoria_{cod_cliente}.xlsx", use_container_width=True)
+            except Exception as e: st.error(f"Erro no processamento: {e}")
