@@ -81,16 +81,22 @@ def gerar_excel_final(df_ent, df_sai, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # MANUAL LINHA A LINHA
+        # --- MANUAL MAXIMALISTA ---
         man_l = [
-            ["SENTINELA - MANUAL DE AUDITORIA FISCAL ELITE"],
-            ["1. REGRAS DE ICMS: Se CST=60, o motor valida se o NCM possui entrada com ST."],
-            ["2. ERRO 'Base nan%': Indica que o NCM não possui alíquota preenchida na sua Base GitHub."],
-            ["3. TAGS XML: BC, Alíquota e Valor aparecem em todas as abas antes do diagnóstico."],
-            ["4. PIS/COFINS/IPI: O diagnóstico '❌ NCM Ausente' significa que o NCM não está na respectiva aba da Base."],
-            ["5. DIFAL: Validado para operações interestaduais com CFOPs de consumo."]
+            ["SENTINELA - MANUAL TÉCNICO E OPERACIONAL (MAXIMALISTA)"],
+            ["1. OBJETIVO: Este sistema audita a integridade tributária cruzando XMLs com regras do GitHub."],
+            ["2. SITUAÇÃO DA NOTA: A Chave de Acesso do XML é buscada no arquivo de Autenticidade."],
+            ["   Se a chave não for encontrada, o status será '⚠️ N/Verif' por falta de prova."],
+            ["3. LÓGICA DO CST 60: Operações com CST 60 (ST Retido anteriormente) exigem prova de entrada."],
+            ["   O motor varre os XMLs de entrada buscando o mesmo NCM com retenção de ST."],
+            ["4. ALÍQUOTAS (ESCALA): O sistema converte pontuações brasileiras e americanas automaticamente."],
+            ["   Exemplo: 18.0, 18,0 e 18 são interpretados como 18.0%."],
+            ["5. NCM AUSENTE: Indica que o código NCM do XML não foi localizado na sua planilha GitHub."],
+            ["   O sistema aponta em qual aba (ICMS, PIS ou IPI) o cadastro está faltando."],
+            ["6. COMPLEMENTO: Valor financeiro estimado do imposto não recolhido ou recolhido a maior."]
         ]
         pd.DataFrame(man_l).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
+        writer.sheets['MANUAL'].set_column('A:A', 120)
 
         def cruzar_aut(df, f):
             if df.empty or not f: return df
@@ -100,36 +106,36 @@ def gerar_excel_final(df_ent, df_sai, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
                 if col_c and col_s:
                     df_a[col_c] = df_a[col_c].astype(str).str.strip()
                     m = df_a.set_index(col_c)[col_s].to_dict()
-                    df['Situação Nota'] = df['CHAVE_ACESSO'].map(m).fillna('⚠️ N/Verif')
+                    df['Situação Nota'] = df['CHAVE_ACESSO'].map(m).fillna('⚠️ Chave Não Localizada')
                 return df
             except: return df
         df_sai = cruzar_aut(df_sai, as_f)
 
         if not df_sai.empty:
-            # ICMS AUDIT
+            # ICMS AUDIT (MAXIMALISTA)
             df_i = df_sai.copy(); ncm_st = df_ent[(df_ent['CST-ICMS']=="60")]['NCM'].unique().tolist() if not df_ent.empty else []
             def audit_icms(row):
                 info = base_icms[base_icms['NCM_KEY'] == row['NCM']]
-                st_e = "✅ ST Localizado" if row['NCM'] in ncm_st else "❌ Sem ST"
-                sit = row.get('Situação Nota', '⚠️ N/Verif')
+                st_e = "✅ Entrada com ST Localizada" if row['NCM'] in ncm_st else "❌ Sem Histórico de ST na Entrada"
+                sit = row.get('Situação Nota', '⚠️ Arquivo de Autenticidade não processado')
                 if row['CST-ICMS'] == "60":
-                    diag = "✅ ST Correto" if row['NCM'] in ncm_st else "❌ Alerta: Saída 60 sem entrada ST"
+                    diag = "✅ ST Validado na Saída" if row['NCM'] in ncm_st else "❌ Alerta: Saída como CST 60 sem comprovante de ST na entrada"
                     return pd.Series([sit, st_e, diag])
-                if info.empty: return pd.Series([sit, st_e, "❌ NCM Ausente na Base ICMS"])
+                if info.empty: return pd.Series([sit, st_e, f"❌ NCM {row['NCM']} Ausente na aba ICMS da Base GitHub"])
                 aliq_b = info.iloc[0, 2]; alq_b_val = safe_float(aliq_b)
-                if pd.isna(aliq_b): return pd.Series([sit, st_e, "❌ NCM s/ Alíquota na Base"])
-                diag = "✅ Correto" if abs(row['ALQ-ICMS'] - alq_b_val) < 0.01 else f"❌ Aliq {row['ALQ-ICMS']}% (Base {alq_b_val}%)"
+                if pd.isna(aliq_b): return pd.Series([sit, st_e, "❌ Erro: Alíquota não preenchida na Base GitHub para este NCM"])
+                diag = "✅ Correto" if abs(row['ALQ-ICMS'] - alq_b_val) < 0.01 else f"❌ Alíquota XML ({row['ALQ-ICMS']}%) diverge da Base ({alq_b_val}%)"
                 return pd.Series([sit, st_e, diag])
-            df_i[['Situação Nota', 'ST Entrada', 'Diagnóstico ICMS']] = df_i.apply(audit_icms, axis=1)
+            df_i[['Situação Nota', 'Check ST Entrada', 'Diagnóstico ICMS']] = df_i.apply(audit_icms, axis=1)
             df_i.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
             # PIS_COFINS AUDIT
             df_p = df_sai.copy()
             def audit_pc(row):
                 info = base_pc[base_pc['NCM_KEY'] == row['NCM']]
-                if info.empty: return "❌ NCM Ausente na Base PIS/COF"
+                if info.empty: return f"❌ NCM {row['NCM']} Ausente na aba PIS_COFINS da Base"
                 cst_b = str(info.iloc[0, 2]).zfill(2)
-                return "✅ Correto" if row['CST-PIS'] == cst_b else f"❌ CST {row['CST-PIS']} (Base {cst_b})"
+                return "✅ Correto" if row['CST-PIS'] == cst_b else f"❌ CST XML ({row['CST-PIS']}) diverge da Base ({cst_b})"
             df_p['Diagnóstico PIS/COF'] = df_p.apply(audit_pc, axis=1)
             df_p.to_excel(writer, sheet_name='PIS_COF_AUDIT', index=False)
 
@@ -137,13 +143,23 @@ def gerar_excel_final(df_ent, df_sai, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
             df_ipi = df_sai.copy()
             def audit_ipi(row):
                 info = base_ipi[base_ipi['NCM_KEY'] == row['NCM']]
-                if info.empty: return "❌ NCM Ausente na Base IPI"
+                if info.empty: return f"❌ NCM {row['NCM']} Ausente na aba IPI da Base"
                 alq_b = safe_float(info.iloc[0, 2])
-                return "✅ Correto" if abs(row['ALQ-IPI'] - alq_b) < 0.01 else f"❌ Aliq {row['ALQ-IPI']}% (Base {alq_b}%)"
+                return "✅ Correto" if abs(row['ALQ-IPI'] - alq_b) < 0.01 else f"❌ Alíquota IPI ({row['ALQ-IPI']}%) diverge da Base ({alq_b}%)"
             df_ipi['Diagnóstico IPI'] = df_ipi.apply(audit_ipi, axis=1)
             df_ipi.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
 
-            # DIFAL AUDIT
-            df_sai.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
+            # DIFAL AUDIT (TAGS + REGRA)
+            df_dif = df_sai.copy()
+            def audit_dif(row):
+                if row['UF_EMIT'] != row['UF_DEST'] and row['VAL-DIFAL'] == 0:
+                    return "❌ Alerta: Operação Interestadual sem destaque de DIFAL"
+                return "✅ OK ou Não Aplicável"
+            df_dif['Diagnóstico DIFAL'] = df_dif.apply(audit_dif, axis=1)
+            df_dif.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
+
+        # ABA RESUMO MAXIMALISTA
+        df_res = pd.DataFrame(lista_erros) if lista_erros else pd.DataFrame([{"RESULTADO": "Nenhuma inconsistência maximalista encontrada."}])
+        df_res.to_excel(writer, sheet_name='RESUMO_ERROS', index=False)
 
     return output.getvalue()
