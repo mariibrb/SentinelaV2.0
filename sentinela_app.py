@@ -29,31 +29,28 @@ with st.sidebar:
     cod_cliente = st.text_input("Código do Cliente (ex: 394)", key="cod_cli")
 
     st.subheader("🔄 Bases de Referência")
-    st.info("O sistema buscará na pasta 'Bases_Tributárias' se o código for preenchido.")
-    u_icms = st.file_uploader("Subir Base ICMS (Manual)", type=['xlsx'], key='base_icms_v3')
-    u_ipi = st.file_uploader("Subir Base IPI (Manual)", type=['xlsx'], key='base_ipi_v3')
-    u_pc = st.file_uploader("Subir Base PIS/COFINS (Manual)", type=['xlsx'], key='base_pc_v3')
+    u_base_unica = st.file_uploader("Subir Base de Auditoria (XLSX)", type=['xlsx'], key='base_unica_v3')
     
     st.markdown("---")
-    st.subheader("📥 Gabaritos (Padrão Mirão)")
+    st.subheader("📥 Gabaritos")
     
     def criar_gabarito(colunas):
         buf = io.BytesIO()
         pd.DataFrame(columns=colunas).to_excel(buf, index=False)
         return buf.getvalue()
 
-    # Gabaritos no formato exato da Tabela Mirão
-    st.download_button("📥 Gabarito PIS/COFINS (Mirão)", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_ENTRADA", "CST_SAIDA", "ALIQ_PIS", "ALIQ_COFINS", "NATUREZA_RECEITA"]), "gabarito_pis_cofins_mirao.xlsx", use_container_width=True)
-    st.download_button("📥 Gabarito ICMS (Mirão)", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_ICMS", "CFOP_PADRAO", "ALIQ_ICMS", "REDUCAO_BC", "MVA_ST"]), "gabarito_icms_mirao.xlsx", use_container_width=True)
-    st.download_button("📥 Gabarito IPI (TIPI/Mirão)", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_IPI", "ALIQ_IPI", "CENQ", "EX"]), "gabarito_ipi_mirao.xlsx", use_container_width=True)
+    # Estrutura A-P conforme sua explicação
+    colunas_auditoria = [
+        # ICMS (A-I)
+        "NCM", "TEM_REDUCAO_ICMS", "CST_ICMS_ESPERADO", "ALIQ_ICMS_ESPERADA", "PERC_REDUCAO_ESPERADO", 
+        "BASE_REDUZIDA_EST", "CST_EST", "ALIQ_ICMS_EST", "OP_INTERNA_CHECK",
+        # IPI (J-M)
+        "NCM_TIPI", "DESCRIÇÃO_TIPI", "ALIQ_IPI_TIPI", "EX_TIPI",
+        # PIS e COFINS (N-P)
+        "NCM_PC", "CST_PIS_COFINS_ENTRADA", "CST_PIS_COFINS_SAIDA"
+    ]
     
-    # Base Completa Mirão (Tudo em uma linha por NCM)
-    st.download_button("📥 Gabarito Base Completa (Mirão)", criar_gabarito([
-        "NCM", "DESCRIÇÃO", 
-        "CST_ICMS", "ALIQ_ICMS", "REDUCAO_BC", "MVA_ST",
-        "CST_IPI", "ALIQ_IPI", "CENQ", "EX",
-        "CST_PIS_COFINS", "ALIQ_PIS", "ALIQ_COFINS", "NAT_RECEITA"
-    ]), "gabarito_completo_mirao.xlsx", use_container_width=True)
+    st.download_button("📥 Gabarito Base de Auditoria", criar_gabarito(colunas_auditoria), "base_auditoria_nascel.xlsx", use_container_width=True)
 
 # --- 4. TELA PRINCIPAL ---
 c1, c2, c3 = st.columns([1.2, 1, 1.2]) 
@@ -86,7 +83,8 @@ if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary"):
             try:
                 df_xe = extrair_dados_xml(xe)
                 df_xs = extrair_dados_xml(xs)
-                relat = gerar_excel_final(df_xe, df_xs, u_icms, u_pc, ae, as_f, ge, gs, u_ipi, cod_cliente)
+                # No motor, u_base_unica entra no lugar das bases separadas
+                relat = gerar_excel_final(df_xe, df_xs, u_base_unica, ae, as_f, ge, gs, cod_cliente)
                 st.success("Auditoria concluída com sucesso! 🧡")
                 st.download_button("💾 BAIXAR RELATÓRIO FINAL", relat, "Auditoria_Sentinela.xlsx", use_container_width=True)
             except Exception as e:
