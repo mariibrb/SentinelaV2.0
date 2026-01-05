@@ -5,7 +5,7 @@ from sentinela_core import extrair_dados_xml, gerar_excel_final
 # 1. Configuração da Página
 st.set_page_config(page_title="Sentinela Nascel", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Estilo CSS Nascel (Compacto)
+# 2. Estilo CSS Nascel
 st.markdown("""
 <style>
     .stApp { background-color: #F7F7F7; }
@@ -35,21 +35,25 @@ with st.sidebar:
     u_pc = st.file_uploader("Subir Base PIS/COFINS (Manual)", type=['xlsx'], key='base_pc_v3')
     
     st.markdown("---")
-    st.subheader("📥 Gabaritos")
+    st.subheader("📥 Gabaritos (Padrão Mirão)")
     
     def criar_gabarito(colunas):
         buf = io.BytesIO()
         pd.DataFrame(columns=colunas).to_excel(buf, index=False)
         return buf.getvalue()
 
-    st.download_button("📥 Gabarito PIS/COFINS", criar_gabarito(["NCM", "ALIQUOTA_PIS", "ALIQUOTA_COFINS", "CST"]), "gabarito_pis_cofins.xlsx", use_container_width=True)
-    st.download_button("📥 Gabarito ICMS", criar_gabarito(["NCM", "ALIQUOTA_ICMS", "CST_ICMS", "REDUCAO_BC"]), "gabarito_icms.xlsx", use_container_width=True)
+    # Gabaritos no formato exato da Tabela Mirão
+    st.download_button("📥 Gabarito PIS/COFINS (Mirão)", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_ENTRADA", "CST_SAIDA", "ALIQ_PIS", "ALIQ_COFINS", "NATUREZA_RECEITA"]), "gabarito_pis_cofins_mirao.xlsx", use_container_width=True)
+    st.download_button("📥 Gabarito ICMS (Mirão)", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_ICMS", "CFOP_PADRAO", "ALIQ_ICMS", "REDUCAO_BC", "MVA_ST"]), "gabarito_icms_mirao.xlsx", use_container_width=True)
+    st.download_button("📥 Gabarito IPI (TIPI/Mirão)", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_IPI", "ALIQ_IPI", "CENQ", "EX"]), "gabarito_ipi_mirao.xlsx", use_container_width=True)
     
-    # Modelo IPI baseado na TIPI
-    st.download_button("📥 Gabarito IPI (TIPI)", criar_gabarito(["NCM", "DESCRIÇÃO_TIPI", "ALIQUOTA_IPI", "CST_IPI", "CÓD_ENQUADRAMENTO", "EX_TIPI"]), "gabarito_ipi_tipi.xlsx", use_container_width=True)
-    
-    # Base Completa atualizada com TIPI
-    st.download_button("📥 Gabarito Base Completa", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_ICMS", "ALIQ_ICMS", "CST_IPI", "ALIQ_IPI", "CÓD_ENQUADRAMENTO", "EX_TIPI", "CST_PIS", "ALIQ_PIS", "CST_COFINS", "ALIQ_COFINS"]), "gabarito_completo.xlsx", use_container_width=True)
+    # Base Completa Mirão (Tudo em uma linha por NCM)
+    st.download_button("📥 Gabarito Base Completa (Mirão)", criar_gabarito([
+        "NCM", "DESCRIÇÃO", 
+        "CST_ICMS", "ALIQ_ICMS", "REDUCAO_BC", "MVA_ST",
+        "CST_IPI", "ALIQ_IPI", "CENQ", "EX",
+        "CST_PIS_COFINS", "ALIQ_PIS", "ALIQ_COFINS", "NAT_RECEITA"
+    ]), "gabarito_completo_mirao.xlsx", use_container_width=True)
 
 # --- 4. TELA PRINCIPAL ---
 c1, c2, c3 = st.columns([1.2, 1, 1.2]) 
