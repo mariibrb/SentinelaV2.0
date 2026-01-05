@@ -40,7 +40,8 @@ with st.sidebar:
     st.download_button("📥 Gabarito IPI", criar_gabarito(["NCM", "ALIQUOTA_IPI", "CST_IPI", "ENQUADRAMENTO"]), "gabarito_ipi.xlsx", use_container_width=True)
 
 # --- 4. TELA PRINCIPAL ---
-c1, c2, c3 = st.columns([1, 2, 1])
+# Ajustado para 50% de redução na área da logo central
+c1, c2, c3 = st.columns([1.5, 1, 1.5]) # Coluna do meio (c2) menor para reduzir a logo
 with c2:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
