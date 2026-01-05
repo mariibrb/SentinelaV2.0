@@ -24,7 +24,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🔄 Bases de Referência")
     u_icms = st.file_uploader("Subir Base ICMS (XLSX)", type=['xlsx'], key='base_icms_v3')
-    u_ipi = st.file_uploader("Subir Base IPI (XLSX)", type=['xlsx'], key='base_ipi_v3') # NOVO CAMPO
+    u_ipi = st.file_uploader("Subir Base IPI (XLSX)", type=['xlsx'], key='base_ipi_v3')
     u_pc = st.file_uploader("Subir Base PIS/COFINS (XLSX)", type=['xlsx'], key='base_pc_v3')
     
     st.markdown("---")
@@ -38,7 +38,6 @@ with st.sidebar:
     st.download_button("📥 Gabarito PIS/COFINS", criar_gabarito(["NCM", "ALIQUOTA_PIS", "ALIQUOTA_COFINS", "CST"]), "gabarito_pis_cofins.xlsx", use_container_width=True)
     st.download_button("📥 Gabarito ICMS", criar_gabarito(["NCM", "ALIQUOTA_ICMS", "CST_ICMS", "REDUCAO_BC"]), "gabarito_icms.xlsx", use_container_width=True)
     st.download_button("📥 Gabarito IPI", criar_gabarito(["NCM", "ALIQUOTA_IPI", "CST_IPI", "ENQUADRAMENTO"]), "gabarito_ipi.xlsx", use_container_width=True)
-    st.download_button("📥 Gabarito Base Completa", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_ICMS", "ALIQ_ICMS", "CST_IPI", "ALIQ_IPI", "CST_PIS", "ALIQ_PIS", "CST_COFINS", "ALIQ_COFINS"]), "gabarito_base_completa.xlsx", use_container_width=True)
 
 # --- 4. TELA PRINCIPAL ---
 c1, c2, c3 = st.columns([1, 2, 1])
