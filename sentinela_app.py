@@ -20,19 +20,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Função para listar empresas no GitHub
 def listar_empresas_github():
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
     if not token or not repo: return []
-    
     url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias"
     headers = {"Authorization": f"token {token}"}
     try:
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             arquivos = response.json()
-            # Pega o início do nome (ex: "394" de "394-BASE.xlsx")
             empresas = sorted(list(set([f['name'].split('-')[0] for f in arquivos if f['name'].endswith('.xlsx')])))
             return empresas
     except: pass
@@ -42,18 +39,13 @@ def listar_empresas_github():
 with st.sidebar:
     if os.path.exists(".streamlit/nascel sem fundo.png"):
         st.image(".streamlit/nascel sem fundo.png", use_container_width=True)
-    
     st.markdown("---")
     st.subheader("🏢 Seleção de Cliente")
-    
     lista_clientes = listar_empresas_github()
-    if lista_clientes:
-        cod_cliente = st.selectbox("Selecione a Empresa", [""] + lista_clientes)
-    else:
-        cod_cliente = st.text_input("Código do Cliente (Manual)", key="cod_cli")
+    cod_cliente = st.selectbox("Selecione a Empresa", [""] + lista_clientes) if lista_clientes else st.text_input("Código do Cliente (Manual)")
 
     st.subheader("🔄 Base de Referência")
-    u_base_unica = st.file_uploader("Ou suba a base manualmente", type=['xlsx'], key='base_unica_v11')
+    u_base_unica = st.file_uploader("Upload Manual da Base", type=['xlsx'], key='base_unica_v12')
     
     st.markdown("---")
     st.subheader("📥 Gabarito")
@@ -63,36 +55,32 @@ with st.sidebar:
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
             f_ncm = workbook.add_format({'bg_color': '#444444', 'font_color': 'white', 'bold': True, 'border': 1})
-            f_laranja_esc = workbook.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
-            f_laranja_cla = workbook.add_format({'bg_color': '#FFB74D', 'bold': True, 'border': 1})
-            f_cinza_e = workbook.add_format({'bg_color': '#757575', 'font_color': 'white', 'bold': True, 'border': 1})
-            f_cinza_c = workbook.add_format({'bg_color': '#E0E0E0', 'bold': True, 'border': 1})
+            f_lar_e = workbook.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
+            f_lar_c = workbook.add_format({'bg_color': '#FFB74D', 'bold': True, 'border': 1})
+            f_cin_e = workbook.add_format({'bg_color': '#757575', 'font_color': 'white', 'bold': True, 'border': 1})
+            f_cin_c = workbook.add_format({'bg_color': '#E0E0E0', 'bold': True, 'border': 1})
 
-            # ICMS
-            cols_icms = ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)", "ALIQ (ESTADUAL)"]
+            # ICMS Ajustado: Coluna E (Alíquota Estadual) Removida
+            cols_icms = ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)"]
             pd.DataFrame(columns=cols_icms).to_excel(writer, sheet_name='ICMS', index=False)
             ws_i = writer.sheets['ICMS']
             ws_i.set_tab_color('#FF6F00')
             for c, v in enumerate(cols_icms):
-                fmt = f_ncm if c == 0 else (f_laranja_esc if c <= 2 else f_laranja_cla)
+                fmt = f_ncm if c == 0 else (f_lar_e if c <= 2 else f_lar_c)
                 ws_i.write(0, c, v, fmt)
 
             # IPI
             cols_ipi = ["NCM_TIPI", "EX", "DESCRIÇÃO", "ALÍQUOTA (%)"]
             pd.DataFrame(columns=cols_ipi).to_excel(writer, sheet_name='IPI', index=False)
             writer.sheets['IPI'].set_tab_color('#757575')
-            for c, v in enumerate(cols_ipi):
-                fmt = f_ncm if c == 0 else f_cinza_e
-                writer.sheets['IPI'].write(0, c, v, fmt)
+            for c, v in enumerate(cols_ipi): ws_i.write(0, c, v, f_ncm if c == 0 else f_cin_e)
 
             # PIS_COFINS
             cols_pc = ["NCM", "CST Entrada", "CST Saída"]
             pd.DataFrame(columns=cols_pc).to_excel(writer, sheet_name='PIS_COFINS', index=False)
             ws_pc = writer.sheets['PIS_COFINS']
             ws_pc.set_tab_color('#E0E0E0')
-            for c, v in enumerate(cols_pc):
-                fmt = f_ncm if c == 0 else f_cinza_c
-                ws_pc.write(0, c, v, fmt)
+            for c, v in enumerate(cols_pc): ws_pc.write(0, c, v, f_ncm if c == 0 else f_cin_c)
 
         return output.getvalue()
 
@@ -103,15 +91,14 @@ st.markdown("---")
 col_e, col_s = st.columns(2, gap="large")
 with col_e:
     st.subheader("📥 FLUXO ENTRADAS")
-    xe = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key="xe_v11")
-    ge = st.file_uploader("📊 Gerencial Entrada (CSV)", type=['csv'], key="ge_v11")
-    ae = st.file_uploader("🔍 Autenticidade Entrada (XLSX)", type=['xlsx'], key="ae_v11")
-
+    xe = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key="xe_v12")
+    ge = st.file_uploader("📊 Gerencial Entrada (CSV)", type=['csv'], key="ge_v12")
+    ae = st.file_uploader("🔍 Autenticidade Entrada (XLSX)", type=['xlsx'], key="ae_v12")
 with col_s:
     st.subheader("📤 FLUXO SAÍDAS")
-    xs = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key="xs_v11")
-    gs = st.file_uploader("📊 Gerencial Saída (CSV)", type=['csv'], key="gs_v11")
-    as_f = st.file_uploader("🔍 Autenticidade Saída (XLSX)", type=['xlsx'], key="as_v11")
+    xs = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key="xs_v12")
+    gs = st.file_uploader("📊 Gerencial Saída (CSV)", type=['csv'], key="gs_v12")
+    as_f = st.file_uploader("🔍 Autenticidade Saída (XLSX)", type=['xlsx'], key="as_v12")
 
 if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary"):
     if not xe and not xs: st.warning("Suba ao menos um XML.")
@@ -120,6 +107,6 @@ if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary"):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, u_base_unica, ae, as_f, ge, gs, cod_cliente)
-                st.success(f"Concluído para o cliente {cod_cliente}! 🧡")
+                st.success(f"Concluído para {cod_cliente}! 🧡")
                 st.download_button("💾 BAIXAR RELATÓRIO", relat, "Auditoria_Nascel.xlsx", use_container_width=True)
             except Exception as e: st.error(f"Erro: {e}")
