@@ -15,10 +15,6 @@ st.markdown("""
     .stApp { background-color: #F7F7F7; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 2px solid #FF6F00; }
     h1, h2, h3 { color: #FF6F00 !important; font-weight: 700; text-align: center; }
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(img) {
-        display: flex !important; justify-content: center !important; width: 100% !important;
-    }
-    .stButton { display: flex !important; justify-content: center !important; width: 100% !important; margin-top: 20px !important; }
     .stButton > button {
         background-color: #FF6F00 !important; color: white !important; border-radius: 25px !important;
         font-weight: bold !important; width: 300px !important; height: 50px !important; border: none !important;
@@ -55,39 +51,35 @@ with st.sidebar:
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             wb = writer.book
             f_ncm = wb.add_format({'bg_color': '#444444', 'font_color': 'white', 'bold': True, 'border': 1})
-            f_lar_e = wb.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
-            f_lar_c = wb.add_format({'bg_color': '#FFB74D', 'font_color': 'white', 'bold': True, 'border': 1})
-            for s, cols, fmt in [('ICMS', ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)"], f_lar_e),
-                                 ('PIS_COFINS', ["NCM", "CST Saída"], f_lar_c)]:
-                pd.DataFrame(columns=cols).to_excel(writer, sheet_name=s, index=False)
-                for c, v in enumerate(cols): writer.sheets[s].write(0, c, v, f_ncm if c == 0 else fmt)
+            f_lar = wb.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
+            for s, c_l in [('ICMS', ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)"]), ('PIS_COFINS', ["NCM", "CST Entrada", "CST Saída"])]:
+                pd.DataFrame(columns=c_l).to_excel(writer, sheet_name=s, index=False)
+                for c, v in enumerate(c_l): writer.sheets[s].write(0, c, v, f_ncm if c == 0 else f_lar)
         return output.getvalue()
-    st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
+    st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_v66.xlsx", use_container_width=True)
 
-st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 1: Empresa</span></div>", unsafe_allow_html=True)
+st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 1: Selecionar Empresa</span></div>", unsafe_allow_html=True)
 col_c = st.columns([1, 1.5, 1])
 with col_c[1]:
     cod_cliente = st.selectbox("Selecione:", [""] + listar_empresas_no_github(), label_visibility="collapsed")
 
 if cod_cliente:
-    st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 2: Documentos</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='passo-container'><span class='passinho'>👣</span><span class='passo-texto'>PASSO 2: Carregar Documentos</span></div>", unsafe_allow_html=True)
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v63")
-        ge = st.file_uploader("Gerencial", type=['csv'], key="ge_v63")
-        ae = st.file_uploader("Autenticidade", type=['xlsx'], key="ae_v63")
+        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v66")
+        ae = st.file_uploader("Autenticidade", type=['xlsx'], key="ae_v66")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v63")
-        gs = st.file_uploader("Gerencial", type=['csv'], key="gs_v63")
-        as_f = st.file_uploader("Autenticidade", type=['xlsx'], key="as_v63")
+        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v66")
+        as_f = st.file_uploader("Autenticidade", type=['xlsx'], key="as_v66")
 
-    if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 O Sentinela está auditando..."):
+    if st.button("🚀 EXECUTAR AUDITORIA"):
+        with st.spinner("🧡 O Sentinela está fazendo a busca profunda de tags..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
-                relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
+                relat = gerar_excel_final(df_xe, df_xs, ae, as_f, cod_cliente)
                 st.success("Auditoria Concluída! 🧡")
-                st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
             except Exception as e: st.error(f"Erro: {e}")
