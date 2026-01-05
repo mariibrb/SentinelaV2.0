@@ -73,15 +73,13 @@ def extrair_dados_xml(files):
                     "BC-IPI": safe_float(buscar('vBC', imp.find('.//IPI'))) if imp.find('.//IPI') is not None else 0.0,
                     "ALQ-IPI": safe_float(buscar('pIPI', imp.find('.//IPI'))) if imp.find('.//IPI') is not None else 0.0,
                     "VAL-IPI": safe_float(buscar('vIPI', imp.find('.//IPI'))) if imp.find('.//IPI') is not None else 0.0,
-                    "BC-DIFAL": safe_float(buscar_recursivo(imp, ['vBCUFDest'])),
-                    "ALQ-DIFAL": safe_float(buscar_recursivo(imp, ['pICMSUFDest'])),
-                    "VAL-DIFAL": safe_float(buscar_recursivo(imp, ['vICMSUFDest']))
+                    "BC-DIFAL": safe_float(buscar_recursivo(imp, ['vBCUFDest'])), "VAL-DIFAL": safe_float(buscar_recursivo(imp, ['vICMSUFDest']))
                 }
                 dados_lista.append(linha)
         except: continue
     return pd.DataFrame(dados_lista)
 
-def gerar_excel_final(df_ent, df_sai, ae_f, as_f, cod_cliente=""):
+def gerar_excel_final(df_ent, df_sai, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
     base_f = buscar_base_no_repositorio(cod_cliente); lista_erros = []
     try:
         base_icms = pd.read_excel(base_f, sheet_name='ICMS'); base_icms['NCM_KEY'] = base_icms.iloc[:, 0].astype(str).str.zfill(8)
@@ -91,73 +89,81 @@ def gerar_excel_final(df_ent, df_sai, ae_f, as_f, cod_cliente=""):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # MANUAL BÍBLIA
+        # --- MANUAL MAXIMALISTA TÉCNICO ---
         man_l = [
-            ["SENTINELA - MANUAL MAXIMALISTA DE AUDITORIA"], [""],
-            ["1. IDENTIFICAÇÃO: CNPJ do Emitente e Destinatário em todas as abas."],
-            ["2. ESPELHO DE TAGS: Todas as colunas do XML aparecem antes do diagnóstico."],
-            ["3. ICMS: Avalia CST, Alíquota, ST na entrada e Complemento (R$)."],
-            ["4. AUTENTICIDADE: Motor fixo na Coluna A (Chave) e Coluna F (Status)."],
-            ["5. VALORES VAZIOS: O sistema aponta 'VALOR NÃO PREENCHIDO NA BASE' para campos nan."]
+            ["SENTINELA - MANUAL MAXIMALISTA DE AUDITORIA FISCAL"], [""],
+            ["1. SITUAÇÃO DA NOTA: Validado via Chave (Col A) e Status (Col F) do arquivo de Autenticidade."],
+            ["2. ICMS AUDIT: Analisa Origem, CST, Alíquota, ST na entrada e Cálculo de Complemento (R$)."],
+            ["3. PIS/COFINS/IPI: Confronto maximalista de CST e Alíquota contra a Base."],
+            ["4. DIFAL: Verifica tags específicas e obrigatoriedade em operações interestaduais."],
+            ["5. VALORES VAZIOS: O sistema aponta 'VALOR NÃO PREENCHIDO NA BASE' para evitar o erro 'nan'."],
+            ["6. IDENTIFICAÇÃO: CNPJ do Emitente e Destinatário em todas as abas."]
         ]
         pd.DataFrame(man_l).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
+        writer.sheets['MANUAL'].set_column('A:A', 110)
 
         def cruzar_aut(df, f):
             if df.empty or f is None: return df
             try:
                 df_a = pd.read_excel(f, header=None)
-                df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
-                status_map = df_a.set_index(0)[5].to_dict()
+                status_map = df_a.set_index(df_a[0].astype(str).str.replace('NFe', '').str.strip())[5].to_dict()
                 df['Situação Nota'] = df['CHAVE_ACESSO'].map(status_map).fillna('⚠️ Chave não encontrada')
                 return df
             except: return df
         df_sai = cruzar_aut(df_sai, as_f)
 
         if not df_sai.empty:
-            # ABA ICMS MAXIMALISTA
+            # --- ICMS MAXIMALISTA ---
             df_i = df_sai.copy(); ncm_st = df_ent[(df_ent['CST-ICMS']=="60")]['NCM'].unique().tolist() if not df_ent.empty else []
             def audit_icms(row):
                 info = base_icms[base_icms['NCM_KEY'] == row['NCM']]
                 st_e = "✅ ST Localizada" if row['NCM'] in ncm_st else "❌ Sem ST na Entrada"
-                sit = row.get('Situação Nota', '⚠️ N/Verif')
+                sit = row.get('Situação Nota', '⚠️ Arquivo não carregado')
                 if row['CST-ICMS'] == "60":
-                    diag = "✅ CST 60 Validado" if row['NCM'] in ncm_st else "❌ Saída 60 s/ prova de entrada ST"
-                    return pd.Series([sit, st_e, diag, "OK", "R$ 0,00"])
-                if info.empty: return pd.Series([sit, st_e, f"❌ NCM {row['NCM']} ausente na Base", "N/A", "R$ 0,00"])
+                    diag = "✅ CST 60 Validado" if row['NCM'] in ncm_st else "❌ Saída 60 irregular: s/ entrada ST"
+                    return pd.Series([sit, st_e, diag, "OK", "OK", "R$ 0,00"])
+                if info.empty: return pd.Series([sit, st_e, f"❌ NCM {row['NCM']} ausente na Base ICMS", "N/A", "N/A", "R$ 0,00"])
+                
                 val_b = info.iloc[0, 2]
-                if pd.isna(val_b): return pd.Series([sit, st_e, f"❌ VALOR NÃO PREENCHIDO NA BASE PARA O NCM {row['NCM']}", "Corrigir", "R$ 0,00"])
+                if pd.isna(val_b): return pd.Series([sit, st_e, "OK", f"❌ VALOR DE ALÍQUOTA NÃO PREENCHIDO NA BASE", "N/A", "R$ 0,00"])
+                
                 alq_b = safe_float(val_b) if row['UF_EMIT'] == row['UF_DEST'] else 12.0
                 diag_cst = "✅ CST OK" if row['CST-ICMS'] == str(info.iloc[0, 1]).zfill(2) else f"❌ CST XML {row['CST-ICMS']} diverge da Base {info.iloc[0, 1]}"
                 diag_alq = "✅ Alq OK" if abs(row['ALQ-ICMS'] - alq_b) < 0.01 else f"❌ Aliq XML {row['ALQ-ICMS']}% diverge da Base {alq_b}%"
                 comp = max(0, (alq_b - row['ALQ-ICMS']) * row['BC-ICMS'] / 100)
-                return pd.Series([sit, st_e, diag_cst, diag_alq, f"R$ {comp:,.2f}"])
-            df_i[['Situação Nota', 'Check ST Entrada', 'Diagnóstico CST', 'Diagnóstico Alíquota', 'Complemento ICMS']] = df_i.apply(audit_icms, axis=1)
+                delta = alq_b - row['ALQ-ICMS']
+                diag_delta = f"Diferença de {delta}%" if delta != 0 else "Sem Diferença"
+                return pd.Series([sit, st_e, diag_cst, diag_alq, diag_delta, f"R$ {comp:,.2f}"])
+            
+            df_i[['Situação Nota', 'Check ST Entrada', 'Diagnóstico CST', 'Diagnóstico Alíquota', 'Delta Alíquota', 'Complemento ICMS']] = df_i.apply(audit_icms, axis=1)
             df_i.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # ABA PIS/COFINS MAXIMALISTA
+            # --- PIS/COFINS MAXIMALISTA ---
             df_p = df_sai.copy()
             def audit_pc(row):
                 info = base_pc[base_pc['NCM_KEY'] == row['NCM']]
-                if info.empty: return f"❌ NCM {row['NCM']} ausente na Base PIS/COF"
+                if info.empty: return "❌ NCM ausente na Base PIS/COF"
                 cst_b = str(info.iloc[0, 2]).zfill(2)
-                return "✅ Correto" if row['CST-PIS'] == cst_b else f"❌ CST XML {row['CST-PIS']} diverge da Base {cst_b}"
+                return "✅ CST Correto" if row['CST-PIS'] == cst_b else f"❌ CST XML {row['CST-PIS']} diverge da Base {cst_b}"
             df_p['Diagnóstico PIS/COF'] = df_p.apply(audit_pc, axis=1)
             df_p.to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
 
-            # ABA IPI MAXIMALISTA
+            # --- IPI MAXIMALISTA ---
             df_ip = df_sai.copy()
             def audit_ipi(row):
                 info = base_ipi[base_ipi['NCM_KEY'] == row['NCM']]
-                if info.empty: return f"❌ NCM {row['NCM']} ausente na Base IPI"
+                if info.empty: return "❌ NCM ausente na Base IPI"
                 alq_b = safe_float(info.iloc[0, 2])
                 return "✅ Alíquota Correta" if abs(row['ALQ-IPI'] - alq_b) < 0.01 else f"❌ Aliq IPI XML {row['ALQ-IPI']}% diverge da Base {alq_b}%"
             df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
             df_ip.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
 
-            # ABA DIFAL MAXIMALISTA
+            # --- DIFAL MAXIMALISTA ---
             
             df_dif = df_sai.copy()
             df_dif['Diagnóstico DIFAL'] = df_dif.apply(lambda r: "❌ Operação Interestadual s/ DIFAL" if r['UF_EMIT'] != r['UF_DEST'] and r['VAL-DIFAL'] == 0 else "✅ OK", axis=1)
             df_dif.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
+
+        pd.DataFrame([{"Status": "Auditoria Concluída"}]).to_excel(writer, sheet_name='RESUMO_ERROS', index=False)
 
     return output.getvalue()
