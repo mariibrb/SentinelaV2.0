@@ -127,4 +127,16 @@ if cod_cliente:
         ae = st.file_uploader("Protocolos Autenticidade", type=['xlsx'], key="ae_v30")
     with c_sai:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("Notas Fiscais (XML)", type='
+        xs = st.file_uploader("Notas Fiscais (XML)", type='xml', accept_multiple_files=True, key="xs_v30")
+        gs = st.file_uploader("Relatório Gerencial (CSV)", type=['csv'], key="gs_v30")
+        as_f = st.file_uploader("Protocolos Autenticidade", type=['xlsx'], key="as_v30")
+
+    # BOTÃO CENTRALIZADO VOLTANDO AO TAMANHO ANTERIOR
+    if st.button("🚀 GERAR RELATÓRIO"):
+        with st.spinner("🧡 O Sentinela está auditando os dados..."):
+            try:
+                df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
+                relat = gerar_excel_final(df_xe, df_xs, None, ae, as_f, ge, gs, cod_cliente)
+                st.success("Auditoria finalizada com sucesso! 🧡")
+                st.download_button("💾 BAIXAR AGORA", relat, f"Auditoria_{cod_cliente}.xlsx", use_container_width=True)
+            except Exception as e: st.error(f"Erro no processamento: {e}")
