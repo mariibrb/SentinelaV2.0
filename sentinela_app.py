@@ -41,7 +41,6 @@ def listar_empresas_no_github():
     except: pass
     return []
 
-# --- SIDEBAR ---
 with st.sidebar:
     try: st.image(".streamlit/Sentinela.png", use_container_width=True)
     except: st.title("SENTINELA 🧡")
@@ -52,13 +51,14 @@ with st.sidebar:
             wb = writer.book
             f_ncm = wb.add_format({'bg_color': '#444444', 'font_color': 'white', 'bold': True, 'border': 1})
             f_lar = wb.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
-            for s, c_l in [('ICMS', ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)"]), ('PIS_COFINS', ["NCM", "CST Entrada", "CST Saída"])]:
+            for s, c_l in [('ICMS', ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)"]), 
+                           ('PIS_COFINS', ["NCM", "CST Entrada", "CST Saída"]),
+                           ('IPI', ["NCM", "CST_IPI", "ALQ_IPI"])]:
                 pd.DataFrame(columns=c_l).to_excel(writer, sheet_name=s, index=False)
                 for c, v in enumerate(c_l): writer.sheets[s].write(0, c, v, f_ncm if c == 0 else f_lar)
         return output.getvalue()
-    st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_base.xlsx", use_container_width=True)
+    st.download_button("📥 Gabarito GitHub", criar_gabarito(), "gabarito_base.xlsx", use_container_width=True)
 
-# --- TELA PRINCIPAL ---
 st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 1: Empresa</span></div>", unsafe_allow_html=True)
 cod_cliente = st.selectbox("Selecione a empresa cadastrada:", [""] + listar_empresas_no_github())
 
@@ -67,19 +67,19 @@ if cod_cliente:
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs Saída", type='xml', accept_multiple_files=True, key="xs_v70")
-        gs = st.file_uploader("Gerencial Saída (CSV)", type=['csv'], key="gs_v70")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx'], key="as_v70")
+        xs = st.file_uploader("XMLs Saída", type='xml', accept_multiple_files=True, key="xs_v71")
+        gs = st.file_uploader("Gerencial Saída (CSV)", type=['csv'], key="gs_v71")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx'], key="as_v71")
     with c2:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs Entrada", type='xml', accept_multiple_files=True, key="xe_v70")
-        ge = st.file_uploader("Gerencial Entrada (CSV)", type=['csv'], key="ge_v70")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx'], key="ae_v70")
+        xe = st.file_uploader("XMLs Entrada", type='xml', accept_multiple_files=True, key="xe_v71")
+        ge = st.file_uploader("Gerencial Entrada (CSV)", type=['csv'], key="ge_v71")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx'], key="ae_v71")
 
     if st.button("🚀 EXECUTAR AUDITORIA"):
         if not xs: st.warning("Carregue ao menos os XMLs de Saída.")
         else:
-            with st.spinner("🧡 Sentinela processando tudo..."):
+            with st.spinner("🧡 Sentinela extraindo CSTs e Auditando..."):
                 try:
                     df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                     relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
