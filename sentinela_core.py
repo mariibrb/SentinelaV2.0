@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 import re, io, requests, streamlit as st
 
 def safe_float(v):
-    """Garante que 12% seja lido como 12.0 independente de vírgula ou ponto."""
     if v is None: return 0.0
     try:
         txt = str(v).replace('R$', '').replace(' ', '').strip()
@@ -54,37 +53,27 @@ def extrair_dados_xml(files):
             for det in root.findall('.//det'):
                 prod = det.find('prod'); imp = det.find('imposto')
                 icms_node = imp.find('.//ICMS') if imp is not None else None
-                
-                # EXTRAÇÃO DAS TAGS DO XML
                 cst_ex = buscar_recursivo(icms_node, ['CST', 'CSOSN']) if icms_node is not None else ""
                 orig_ex = buscar_recursivo(icms_node, ['orig']) if icms_node is not None else ""
                 
                 linha = {
-                    "CHAVE_ACESSO": str(chave).strip(),
-                    "NUM_NF": buscar('nNF', root),
-                    "CNPJ_EMIT": cnpj_e,
-                    "CNPJ_DEST": cnpj_d,
-                    "UF_EMIT": buscar('UF', emit),
-                    "UF_DEST": buscar('UF', dest),
-                    "CFOP": buscar('CFOP', prod),
-                    "NCM": re.sub(r'\D', '', buscar('NCM', prod)).zfill(8),
-                    "VPROD": safe_float(buscar('vProd', prod)),
-                    "ORIGEM": orig_ex,
-                    "CST-ICMS": cst_ex.zfill(2) if cst_ex else "",
-                    "BC-ICMS": safe_float(buscar('vBC', imp)),
-                    "ALQ-ICMS": safe_float(buscar('pICMS', imp)),
-                    "VLR-ICMS": safe_float(buscar('vICMS', imp)),
+                    "CHAVE_ACESSO": str(chave).strip(), "NUM_NF": buscar('nNF', root),
+                    "CNPJ_EMIT": cnpj_e, "CNPJ_DEST": cnpj_d, "UF_EMIT": buscar('UF', emit), "UF_DEST": buscar('UF', dest),
+                    "CFOP": buscar('CFOP', prod), "NCM": re.sub(r'\D', '', buscar('NCM', prod)).zfill(8),
+                    "VPROD": safe_float(buscar('vProd', prod)), "ORIGEM": orig_ex, "CST-ICMS": cst_ex.zfill(2) if cst_ex else "",
+                    "BC-ICMS": safe_float(buscar('vBC', imp)), "ALQ-ICMS": safe_float(buscar('pICMS', imp)), "VLR-ICMS": safe_float(buscar('vICMS', imp)),
                     "ICMS-ST": safe_float(buscar('vICMSST', imp)),
                     "CST-PIS": buscar_recursivo(imp.find('.//PIS'), ['CST']) if imp.find('.//PIS') is not None else "",
-                    "VAL-PIS": safe_float(buscar('vPIS', imp)),
+                    "BC-PIS": safe_float(buscar('vBC', imp.find('.//PIS'))) if imp.find('.//PIS') is not None else 0.0,
+                    "VAL-PIS": safe_float(buscar('vPIS', imp.find('.//PIS'))) if imp.find('.//PIS') is not None else 0.0,
                     "CST-COF": buscar_recursivo(imp.find('.//COFINS'), ['CST']) if imp.find('.//COFINS') is not None else "",
-                    "VAL-COF": safe_float(buscar('vCOFINS', imp)),
+                    "BC-COF": safe_float(buscar('vBC', imp.find('.//COFINS'))) if imp.find('.//COFINS') is not None else 0.0,
+                    "VAL-COF": safe_float(buscar('vCOFINS', imp.find('.//COFINS'))) if imp.find('.//COFINS') is not None else 0.0,
                     "CST-IPI": buscar_recursivo(imp.find('.//IPI'), ['CST']) if imp.find('.//IPI') is not None else "",
                     "BC-IPI": safe_float(buscar('vBC', imp.find('.//IPI'))) if imp.find('.//IPI') is not None else 0.0,
                     "ALQ-IPI": safe_float(buscar('pIPI', imp.find('.//IPI'))) if imp.find('.//IPI') is not None else 0.0,
                     "VAL-IPI": safe_float(buscar('vIPI', imp.find('.//IPI'))) if imp.find('.//IPI') is not None else 0.0,
-                    "VAL-DIFAL": safe_float(buscar('vICMSUFDest', imp)),
-                    "BC-DIFAL": safe_float(buscar('vBCUFDest', imp))
+                    "BC-DIFAL": safe_float(buscar('vBCUFDest', imp)), "VAL-DIFAL": safe_float(buscar('vICMSUFDest', imp))
                 }
                 dados_lista.append(linha)
         except: continue
@@ -100,74 +89,64 @@ def gerar_excel_final(df_ent, df_sai, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # --- MANUAL BÍBLIA MAXIMALISTA ---
+        # MANUAL COMPLETO MAXIMALISTA
         man_l = [
-            ["SENTINELA - MANUAL TÉCNICO COMPLETO (BÍBLIA DA AUDITORIA)"],
-            [""], ["1. CONCEITO: Auditoria maximalista de XML vs Base Tributária."],
-            ["2. CST 60: Se a saída é 60, o sistema busca o NCM nos XMLs de entrada para provar a ST."],
-            ["3. SITUAÇÃO: Cruzamento rigoroso com Chave de Acesso para detectar Canceladas."],
-            ["4. ALÍQUOTAS: Erros de interpretação de escala foram eliminados (12 = 12.0)."],
-            ["5. PIS/COFINS/IPI/DIFAL: Analisados item a item com espelho de tags XML."],
-            ["6. COMPLEMENTO: Valor estimado do prejuízo fiscal por linha divergente."]
+            ["SENTINELA - MANUAL COMPLETO DE AUDITORIA FISCAL"],
+            ["1. SITUAÇÃO DA NOTA: Agora o motor realiza busca flexível de colunas (Chave, Acesso, Status, Situação)."],
+            ["2. ESPELHO DE TAGS: Todas as abas trazem as colunas do XML antes da análise tributária."],
+            ["3. LÓGICA CST 60: Confronta saídas 60 com o histórico de retenção de ST nas entradas."],
+            ["4. NCM AUSENTE: Mensagem maximalista indicando qual aba da Base GitHub precisa de correção."]
         ]
         pd.DataFrame(man_l).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
 
+        # MOTOR DE AUTENTICIDADE MAXIMALISTA
         def cruzar_aut(df, f):
-            if df.empty or not f: return df
+            if df.empty or f is None: return df
             try:
-                df_a = pd.read_excel(f); col_c = next((c for c in df_a.columns if 'Chave' in str(c)), None)
-                col_s = next((c for c in df_a.columns if 'Status' in str(c) or 'Situação' in str(c)), None)
+                df_a = pd.read_excel(f)
+                df_a.columns = [str(c).upper().strip() for c in df_a.columns]
+                col_c = next((c for c in df_a.columns if any(x in c for x in ['CHAVE', 'ACESSO', 'NFE'])), None)
+                col_s = next((c for c in df_a.columns if any(x in c for x in ['STATUS', 'SITUAÇÃO', 'SITUACAO'])), None)
                 if col_c and col_s:
-                    status_map = df_a.set_index(df_a[col_c].astype(str).str.strip())[col_s].to_dict()
-                    df['Situação Nota'] = df['CHAVE_ACESSO'].map(status_map).fillna('⚠️ N/Verificado')
+                    df_a[col_c] = df_a[col_c].astype(str).str.replace('NFe', '').str.strip()
+                    m = df_a.set_index(col_c)[col_s].to_dict()
+                    df['Situação Nota'] = df['CHAVE_ACESSO'].map(m).fillna('⚠️ Chave Não Localizada')
+                else: df['Situação Nota'] = '⚠️ Colunas de Autenticidade não Identificadas'
                 return df
-            except: return df
+            except Exception as e: 
+                df['Situação Nota'] = f'⚠️ Erro: {e}'
+                return df
         df_sai = cruzar_aut(df_sai, as_f)
 
         if not df_sai.empty:
-            # --- ICMS ---
-            df_i = df_sai.copy(); ncm_st = df_ent[(df_ent['CST-ICMS']=="60") | (df_ent['ICMS-ST'] > 0)]['NCM'].unique().tolist() if not df_ent.empty else []
+            # ICMS
+            df_i = df_sai.copy(); ncm_st = df_ent[(df_ent['CST-ICMS']=="60")]['NCM'].unique().tolist() if not df_ent.empty else []
             def audit_icms(row):
                 info = base_icms[base_icms['NCM_KEY'] == row['NCM']]
-                st_e = "✅ ST Localizado" if row['NCM'] in ncm_st else "❌ Sem ST na Entrada"
+                st_e = "✅ ST na Entrada" if row['NCM'] in ncm_st else "❌ Sem ST na Entrada"
                 sit = row.get('Situação Nota', '⚠️ N/Verif')
                 if row['CST-ICMS'] == "60":
-                    diag = "✅ ST Validado" if row['NCM'] in ncm_st else "❌ Irregular: Saída 60 s/ entrada ST"
-                    return pd.Series([sit, st_e, diag, "R$ 0,00"])
-                if info.empty: return pd.Series([sit, st_e, "❌ NCM Ausente na Base", "R$ 0,00"])
+                    return pd.Series([sit, st_e, "✅ ST Validado" if row['NCM'] in ncm_st else "❌ Saída 60 s/ prova de entrada ST"])
+                if info.empty: return pd.Series([sit, st_e, f"❌ NCM {row['NCM']} ausente na Base ICMS GitHub"])
                 alq_b = safe_float(info.iloc[0, 2]) if row['UF_EMIT'] == row['UF_DEST'] else 12.0
                 diag = "✅ Correto" if abs(row['ALQ-ICMS'] - alq_b) < 0.01 else f"❌ Aliq XML {row['ALQ-ICMS']}% diverge da Base {alq_b}%"
-                comp = max(0, (alq_b - row['ALQ-ICMS']) * row['BC-ICMS'] / 100)
-                if "❌" in diag: lista_erros.append({"NF": row['NUM_NF'], "Erro": diag})
-                return pd.Series([sit, st_e, diag, f"R$ {comp:,.2f}"])
-            df_i[['Situação Nota', 'Check ST Entrada', 'Diagnóstico ICMS', 'Complemento ICMS']] = df_i.apply(audit_icms, axis=1)
+                return pd.Series([sit, st_e, diag])
+            df_i[['Situação Nota', 'Check ST Entrada', 'Diagnóstico ICMS']] = df_i.apply(audit_icms, axis=1)
             df_i.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # --- PIS/COFINS ---
-            df_p = df_sai[['CHAVE_ACESSO', 'NUM_NF', 'CNPJ_EMIT', 'CNPJ_DEST', 'NCM', 'VPROD', 'CST-PIS', 'VAL-PIS', 'CST-COF', 'VAL-COF']].copy()
-            def audit_pc(row):
-                info = base_pc[base_pc['NCM_KEY'] == row['NCM']]
-                if info.empty: return "❌ NCM Ausente na Base PIS/COF"
-                cst_b = str(info.iloc[0, 2]).zfill(2) if len(info.columns) > 2 else "01"
-                return "✅ Correto" if row['CST-PIS'] == cst_b else f"❌ CST XML {row['CST-PIS']} diverge da Base {cst_b}"
-            df_p['Diagnóstico PIS/COF'] = df_p.apply(audit_pc, axis=1)
-            df_p.to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
+            # PIS/COFINS, IPI e DIFAL (Tags + Diagnósticos)
+            for aba, base, col_idx in [('PIS_COFINS_AUDIT', base_pc, 2), ('IPI_AUDIT', base_ipi, 2)]:
+                df_aba = df_sai.copy()
+                def audit_gen(row):
+                    info = base[base['NCM_KEY'] == row['NCM']] if not base.empty else pd.DataFrame()
+                    if info.empty: return f"❌ NCM {row['NCM']} ausente na Base GitHub"
+                    val_b = str(info.iloc[0, col_idx]).zfill(2) if 'PIS' in aba else safe_float(info.iloc[0, col_idx])
+                    val_x = row['CST-PIS'] if 'PIS' in aba else row['ALQ-IPI']
+                    return "✅ Correto" if str(val_x) == str(val_b) else f"❌ XML {val_x} diverge da Base {val_b}"
+                df_aba['Diagnóstico'] = df_aba.apply(audit_gen, axis=1)
+                df_aba.to_excel(writer, sheet_name=aba, index=False)
+            
+            df_sai[['CHAVE_ACESSO', 'NUM_NF', 'UF_EMIT', 'UF_DEST', 'CFOP', 'BC-DIFAL', 'VAL-DIFAL']].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
-            # --- IPI ---
-            df_ip = df_sai[['CHAVE_ACESSO', 'NUM_NF', 'CNPJ_EMIT', 'CNPJ_DEST', 'NCM', 'VPROD', 'CST-IPI', 'BC-IPI', 'ALQ-IPI', 'VAL-IPI']].copy()
-            def audit_ipi(row):
-                info = base_ipi[base_ipi['NCM_KEY'] == row['NCM']]
-                if info.empty: return "❌ NCM Ausente na Base IPI"
-                alq_b = safe_float(info.iloc[0, 2])
-                return "✅ Correto" if abs(row['ALQ-IPI'] - alq_b) < 0.01 else f"❌ Aliq IPI XML {row['ALQ-IPI']}% diverge da Base {alq_b}%"
-            df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
-            df_ip.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
-
-            # --- DIFAL ---
-            df_d = df_sai[['CHAVE_ACESSO', 'NUM_NF', 'CNPJ_EMIT', 'CNPJ_DEST', 'UF_EMIT', 'UF_DEST', 'CFOP', 'VAL-DIFAL', 'BC-DIFAL']].copy()
-            df_d['Diagnóstico DIFAL'] = df_d.apply(lambda r: "❌ Alerta: Operação Interestadual sem DIFAL" if r['UF_EMIT'] != r['UF_DEST'] and r['VAL-DIFAL'] == 0 else "✅ OK", axis=1)
-            df_d.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
-
-        pd.DataFrame(lista_erros if lista_erros else [{"NF": "-", "Erro": "Nenhuma inconsistência encontrada."}]).to_excel(writer, sheet_name='RESUMO_ERROS', index=False)
-
+        pd.DataFrame(lista_erros if lista_erros else [{"NF": "-", "Erro": "Tudo OK"}]).to_excel(writer, sheet_name='RESUMO_ERROS', index=False)
     return output.getvalue()
