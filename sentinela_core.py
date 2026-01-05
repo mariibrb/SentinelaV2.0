@@ -45,11 +45,9 @@ def extrair_dados_xml(files):
             f.seek(0)
             xml_data = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', f.read().decode('utf-8', errors='replace'))
             root = ET.fromstring(xml_data)
-            
             def buscar_tag(tag, raiz):
                 alvo = raiz.find(f'.//{tag}')
                 return alvo.text if alvo is not None and alvo.text is not None else ""
-            
             def buscar_recursivo(node, tags_alvo):
                 for elem in node.iter():
                     tag_limpa = elem.tag.split('}')[-1]
@@ -58,9 +56,6 @@ def extrair_dados_xml(files):
 
             inf = root.find('.//infNFe'); chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
             emit = root.find('.//emit'); dest = root.find('.//dest')
-            
-            cnpj_e = (emit.find('.//CNPJ').text if emit.find('.//CNPJ') is not None else emit.find('.//CPF').text) if emit is not None else ""
-            cnpj_d = (dest.find('.//CNPJ').text if dest.find('.//CNPJ') is not None else dest.find('.//CPF').text) if dest is not None else ""
             uf_e = emit.find('.//UF').text if emit is not None else ""
             uf_d = dest.find('.//UF').text if dest is not None else ""
 
@@ -71,37 +66,32 @@ def extrair_dados_xml(files):
                 orig_ex = buscar_recursivo(icms_node, ['orig']) if icms_node is not None else ""
                 
                 linha = {
-                    "CHAVE_ACESSO": str(chave).strip(), 
-                    "NUM_NF": buscar_tag('nNF', root),
-                    "CNPJ_EMIT": cnpj_e, "CNPJ_DEST": cnpj_d, "UF_EMIT": uf_e, "UF_DEST": uf_d,
+                    "CHAVE_ACESSO": str(chave).strip(), "NUM_NF": buscar_tag('nNF', root),
+                    "CNPJ_EMIT": (emit.find('.//CNPJ').text if emit.find('.//CNPJ') is not None else emit.find('.//CPF').text) if emit is not None else "",
+                    "CNPJ_DEST": (dest.find('.//CNPJ').text if dest.find('.//CNPJ') is not None else dest.find('.//CPF').text) if dest is not None else "",
+                    "UF_EMIT": uf_e, "UF_DEST": uf_d,
                     "CFOP": prod.find('CFOP').text if prod is not None else "", 
                     "NCM": re.sub(r'\D', '', prod.find('NCM').text).zfill(8) if prod is not None else "",
                     "VPROD": safe_float(prod.find('vProd').text) if prod is not None else 0.0,
-                    "ORIGEM": orig_ex, 
-                    "CST-ICMS": cst_ex.zfill(2) if cst_ex else "",
+                    "ORIGEM": orig_ex, "CST-ICMS": cst_ex.zfill(2) if cst_ex else "",
                     "BC-ICMS": safe_float(buscar_recursivo(imp, ['vBC'])), 
                     "ALQ-ICMS": safe_float(buscar_recursivo(imp, ['pICMS'])), 
                     "VLR-ICMS": safe_float(buscar_recursivo(imp, ['vICMS'])),
-                    # Tags de ST para Auditoria do CST 10
-                    "BC-ICMS-ST": safe_float(buscar_recursivo(imp, ['vBCST'])),
                     "VLR-ICMS-ST": safe_float(buscar_recursivo(imp, ['vICMSST'])),
                     "CST-PIS": buscar_recursivo(imp.find('.//PIS'), ['CST']) if imp.find('.//PIS') is not None else "",
-                    "BC-PIS": safe_float(buscar_recursivo(imp.find('.//PIS'), ['vBC'])),
-                    "VAL-PIS": safe_float(buscar_recursivo(imp.find('.//PIS'), ['vPIS'])),
+                    "VAL-PIS": safe_float(buscar_recursivo(imp, ['vPIS'])),
                     "CST-COF": buscar_recursivo(imp.find('.//COFINS'), ['CST']) if imp.find('.//COFINS') is not None else "",
-                    "BC-COF": safe_float(buscar_recursivo(imp.find('.//COFINS'), ['vBC'])),
-                    "VAL-COF": safe_float(buscar_recursivo(imp.find('.//COFINS'), ['vCOFINS'])),
+                    "VAL-COF": safe_float(buscar_recursivo(imp, ['vCOFINS'])),
                     "CST-IPI": buscar_recursivo(imp.find('.//IPI'), ['CST']) if imp.find('.//IPI') is not None else "",
-                    "BC-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['vBC'])),
-                    "ALQ-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['pIPI'])),
-                    "VAL-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['vIPI'])),
+                    "ALQ-IPI": safe_float(buscar_recursivo(imp, ['pIPI'])),
+                    "VAL-IPI": safe_float(buscar_recursivo(imp, ['vIPI'])),
                     "VAL-DIFAL": safe_float(buscar_recursivo(imp, ['vICMSUFDest']))
                 }
                 dados_lista.append(linha)
         except: continue
     return pd.DataFrame(dados_lista)
 
-def gerar_excel_final(df_ent, df_xs, ae_f, as_f, cod_cliente=""):
+def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
     base_f = buscar_base_no_repositorio(cod_cliente)
     try:
         base_icms = pd.read_excel(base_f, sheet_name='ICMS'); base_icms['NCM_KEY'] = base_icms['NCM'].astype(str).str.zfill(8)
@@ -113,10 +103,10 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, cod_cliente=""):
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         man_l = [
             ["SENTINELA - MANUAL MAXIMALISTA DE AUDITORIA FISCAL"], [""],
-            ["1. CST 10: O motor valida se existe destaque de ICMS-ST para CST 10."],
-            ["2. CROSS-CHECK CFOP: Identifica conflitos entre CFOP e CST de ST."],
-            ["3. REGRA IMPORTADOS (4%): Interestadual com origem 1, 2, 3 ou 8 trava em 4%."],
-            ["4. ESPELHO DE TAGS: Todas as bases e valores extraídos aparecem no relatório."]
+            ["1. GERENCIAIS: Auditoria de estoque e valores unitários via arquivos CSV."],
+            ["2. CST 10: Valida se há destaque de ICMS-ST para o CST 10."],
+            ["3. CROSS-CHECK CFOP: Identifica conflitos de operação ST com CFOP Normal."],
+            ["4. ESPELHO DE TAGS: Todas as bases e alíquotas extraídas aparecem no relatório."]
         ]
         pd.DataFrame(man_l).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
 
@@ -134,17 +124,14 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, cod_cliente=""):
         if not df_xs.empty:
             # --- ABA ICMS MAXIMALISTA ---
             df_i = df_xs.copy(); ncm_st = df_ent[(df_ent['CST-ICMS']=="60")]['NCM'].unique().tolist() if not df_ent.empty else []
-            
             def audit_icms(row):
                 info = base_icms[base_icms['NCM_KEY'] == row['NCM']]
                 sit = row.get('Situação Nota', '⚠️ N/V')
-                
-                # Inteligência de Cross-Check CFOP x CST
                 cfop_st = ['5401', '5403', '5405', '6401', '6403', '6404']
                 diag_cross = "✅ CFOP/CST OK"
                 if row['CFOP'] in cfop_st and row['CST-ICMS'] in ['00', '20']: diag_cross = "❌ Erro: CFOP ST c/ CST Tributado"
                 if row['CST-ICMS'] == '10' and row['VLR-ICMS-ST'] == 0: diag_cross = "❌ Alerta: CST 10 sem destaque de ST"
-
+                
                 val_github = safe_float(info['ALÍQUOTA'].iloc[0]) if not info.empty and 'ALÍQUOTA' in info.columns else None
                 if row['UF_EMIT'] != row['UF_DEST']:
                     alq_esp = 4.0 if str(row['ORIGEM']) in ['1', '2', '3', '8'] else 12.0
@@ -159,17 +146,9 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, cod_cliente=""):
             df_i['Carga Efetiva (%)'] = ((df_i['VLR-ICMS'] + df_i['VAL-PIS'] + df_i['VAL-COF'] + df_i['VAL-IPI']) / df_i['VPROD'] * 100).round(2)
             df_i.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # --- ABA PIS/COFINS ---
-            df_pc = df_xs.copy()
-            def audit_pc(row):
-                info = base_pc[base_pc['NCM_KEY'] == row['NCM']]
-                if info.empty: return "❌ NCM ausente na Base"
-                cst_b = str(info['CST_BASE'].iloc[0]).zfill(2)
-                return "✅ CST OK" if row['CST-PIS'] == cst_b else f"❌ XML {row['CST-PIS']} (Base {cst_b})"
-            df_pc['Diagnóstico PIS/COF'] = df_pc.apply(audit_pc, axis=1)
-            df_pc.to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
-
             # --- DEMAIS ABAS ---
+            
+            df_xs.to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
             df_xs.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
             df_xs.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
