@@ -45,11 +45,9 @@ def extrair_dados_xml(files):
             f.seek(0)
             xml_data = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', f.read().decode('utf-8', errors='replace'))
             root = ET.fromstring(xml_data)
-            
             def buscar_tag(tag, raiz):
                 alvo = raiz.find(f'.//{tag}')
                 return alvo.text if alvo is not None and alvo.text is not None else ""
-            
             def buscar_recursivo(node, tags_alvo):
                 for elem in node.iter():
                     tag_limpa = elem.tag.split('}')[-1]
@@ -65,17 +63,14 @@ def extrair_dados_xml(files):
                 prod = det.find('prod'); imp = det.find('imposto')
                 icms_node = imp.find('.//ICMS') if imp is not None else None
                 cst_ex = buscar_recursivo(icms_node, ['CST', 'CSOSN']) if icms_node is not None else ""
-                orig_ex = buscar_recursivo(icms_node, ['orig']) if icms_node is not None else ""
-                
                 linha = {
-                    "CHAVE_ACESSO": str(chave).strip(), 
-                    "NUM_NF": buscar_tag('nNF', root),
+                    "CHAVE_ACESSO": str(chave).strip(), "NUM_NF": buscar_tag('nNF', root),
                     "CNPJ_EMIT": (emit.find('.//CNPJ').text if emit is not None else ""),
-                    "UF_EMIT": uf_e, "UF_DEST": uf_d,
-                    "CFOP": prod.find('CFOP').text if prod is not None else "", 
+                    "UF_EMIT": uf_e, "UF_DEST": uf_d, "CFOP": prod.find('CFOP').text if prod is not None else "", 
                     "NCM": re.sub(r'\D', '', prod.find('NCM').text).zfill(8) if prod is not None else "",
                     "VPROD": safe_float(prod.find('vProd').text) or 0.0,
-                    "ORIGEM": orig_ex, "CST-ICMS": cst_ex.zfill(2) if cst_ex else "",
+                    "ORIGEM": buscar_recursivo(icms_node, ['orig']) if icms_node is not None else "", 
+                    "CST-ICMS": cst_ex.zfill(2) if cst_ex else "",
                     "BC-ICMS": safe_float(buscar_recursivo(imp, ['vBC'])) or 0.0, 
                     "ALQ-ICMS": safe_float(buscar_recursivo(imp, ['pICMS'])), 
                     "VLR-ICMS": safe_float(buscar_recursivo(imp, ['vICMS'])) or 0.0,
@@ -111,11 +106,10 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
         man_l = [
             ["SENTINELA - AUDITORIA MAXIMALISTA TOTAL"], [""],
             ["1. PRIORIDADE GITHUB: NCMs na base do cliente têm precedência absoluta."],
-            ["2. REGRA GERAL ICMS: Aplicada via Fallback UF quando o NCM está vazio."],
-            ["3. REGRA GERAL IPI: Utiliza a TIPI padrão enviada na ausência de regra específica."],
-            ["4. CST 10 / ST: Auditoria rígida de destaque e conformidade de CFOP."],
-            ["5. PIS/COFINS: Confronto de CST de entrada e saída por NCM."],
-            ["6. GERENCIAIS E AUTENTICIDADE: Cruzamento de dados externos com XMLs."]
+            ["2. REGRA GERAL ICMS: Fallback por UF quando o NCM está vazio."],
+            ["3. REGRA GERAL IPI: Utiliza a TIPI padrão enviada para NCMs vazios."],
+            ["4. CST 10 / ST: Auditoria de destaque e conflito de CFOP."],
+            ["5. PIS/COFINS: Confronto de CST por NCM."]
         ]
         pd.DataFrame(man_l).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
 
@@ -154,7 +148,8 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
                 return pd.Series([sit, diag_st, diag_alq, f"R$ {comp:,.2f}"])
             
             df_i[['Situação Nota', 'Check ST', 'Diagnóstico ICMS', 'Complemento ICMS']] = df_i.apply(audit_icms, axis=1)
-            df_i['Carga Efetiva (%)'] = ((df_i['VLR-ICMS'] + df_i['VAL-PIS'] + df_i['VAL-COF'] + df_i['VAL-IPI']) / (row['VPROD'] if row['VPROD'] > 0 else 1) * 100).round(2)
+            # FIX: Cálculo de Carga Efetiva com segurança contra divisão por zero e 'row' não definido
+            df_i['Carga Efetiva (%)'] = ((df_i['VLR-ICMS'] + df_i['VAL-PIS'] + df_i['VAL-COF'] + df_i['VAL-IPI']) / df_i['VPROD'].replace(0, 1) * 100).round(2)
             df_i.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
             # --- PIS/COFINS ---
@@ -179,10 +174,5 @@ def gerar_excel_final(df_ent, df_xs, ae_f, as_f, ge_f, gs_f, cod_cliente=""):
                 return "✅ Alq OK" if abs(alq_xml - alq_esp) < 0.01 else f"❌ XML {alq_xml}% vs TIPI {alq_esp}%"
             df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
             df_ip.to_excel(writer, sheet_name='IPI_AUDIT', index=False)
-
-            # --- DIFAL ---
-            df_dif = df_xs.copy()
-            df_dif['Check DIFAL'] = df_dif.apply(lambda r: "⚠️ Faltando DIFAL" if r['UF_EMIT'] != r['UF_DEST'] and r['VAL-DIFAL'] == 0 else "✅ OK", axis=1)
-            df_dif.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
     return output.getvalue()
