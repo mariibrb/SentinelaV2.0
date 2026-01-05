@@ -24,27 +24,20 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🔄 Bases de Referência")
     u_icms = st.file_uploader("Subir Base ICMS (XLSX)", type=['xlsx'], key='base_icms_v3')
+    u_ipi = st.file_uploader("Subir Base IPI (XLSX)", type=['xlsx'], key='base_ipi_v3') # NOVO CAMPO
     u_pc = st.file_uploader("Subir Base PIS/COFINS (XLSX)", type=['xlsx'], key='base_pc_v3')
     
     st.markdown("---")
     st.subheader("📥 Gabaritos")
     
-    # Função auxiliar para gerar excel em memória
     def criar_gabarito(colunas):
         buf = io.BytesIO()
         pd.DataFrame(columns=colunas).to_excel(buf, index=False)
         return buf.getvalue()
 
-    # Gabarito PIS/COFINS
     st.download_button("📥 Gabarito PIS/COFINS", criar_gabarito(["NCM", "ALIQUOTA_PIS", "ALIQUOTA_COFINS", "CST"]), "gabarito_pis_cofins.xlsx", use_container_width=True)
-
-    # Gabarito ICMS
     st.download_button("📥 Gabarito ICMS", criar_gabarito(["NCM", "ALIQUOTA_ICMS", "CST_ICMS", "REDUCAO_BC"]), "gabarito_icms.xlsx", use_container_width=True)
-
-    # Gabarito IPI
     st.download_button("📥 Gabarito IPI", criar_gabarito(["NCM", "ALIQUOTA_IPI", "CST_IPI", "ENQUADRAMENTO"]), "gabarito_ipi.xlsx", use_container_width=True)
-
-    # Gabarito Base Completa
     st.download_button("📥 Gabarito Base Completa", criar_gabarito(["NCM", "DESCRIÇÃO", "CST_ICMS", "ALIQ_ICMS", "CST_IPI", "ALIQ_IPI", "CST_PIS", "ALIQ_PIS", "CST_COFINS", "ALIQ_COFINS"]), "gabarito_base_completa.xlsx", use_container_width=True)
 
 # --- 4. TELA PRINCIPAL ---
@@ -81,7 +74,7 @@ if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary"):
             try:
                 df_xe = extrair_dados_xml(xe)
                 df_xs = extrair_dados_xml(xs)
-                relat = gerar_excel_final(df_xe, df_xs, u_icms, u_pc, ae, as_f, ge, gs)
+                relat = gerar_excel_final(df_xe, df_xs, u_icms, u_pc, ae, as_f, ge, gs, u_ipi)
                 st.success("Auditoria concluída com sucesso! 🧡")
                 st.download_button("💾 BAIXAR RELATÓRIO FINAL", relat, "Auditoria_Sentinela.xlsx", use_container_width=True)
             except Exception as e:
