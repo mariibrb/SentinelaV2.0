@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml, gerar_excel_final
 # 1. Configuração da Página
 st.set_page_config(page_title="Sentinela - Auditoria Fiscal", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Estilo CSS Sentinela (Versão Final Aprovada)
+# 2. Estilo CSS Sentinela (Versão Final e Protegida)
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -25,7 +25,6 @@ st.markdown("""
         background-color: #FF6F00 !important; color: white !important; border-radius: 25px !important;
         font-weight: bold !important; width: 300px !important; height: 50px !important; border: none !important;
     }
-    .stButton > button:hover { background-color: #E65100 !important; transform: scale(1.02) !important; }
     
     .passo-container {
         background-color: #FFFFFF; padding: 10px 15px; border-radius: 10px; border-left: 5px solid #FF6F00;
@@ -63,20 +62,17 @@ with st.sidebar:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             wb = writer.book
-            # Cores Restauradas
             f_ncm = wb.add_format({'bg_color': '#444444', 'font_color': 'white', 'bold': True, 'border': 1})
             f_lar_e = wb.add_format({'bg_color': '#FF6F00', 'font_color': 'white', 'bold': True, 'border': 1})
             f_lar_c = wb.add_format({'bg_color': '#FFB74D', 'bold': True, 'border': 1})
 
             cols_icms = ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)"]
             pd.DataFrame(columns=cols_icms).to_excel(writer, sheet_name='ICMS', index=False)
-            for c, v in enumerate(cols_icms):
-                writer.sheets['ICMS'].write(0, c, v, f_ncm if c == 0 else f_lar_e)
+            for c, v in enumerate(cols_icms): writer.sheets['ICMS'].write(0, c, v, f_ncm if c == 0 else f_lar_e)
 
             cols_pc = ["NCM", "CST Entrada", "CST Saída"]
             pd.DataFrame(columns=cols_pc).to_excel(writer, sheet_name='PIS_COFINS', index=False)
-            for c, v in enumerate(cols_pc):
-                writer.sheets['PIS_COFINS'].write(0, c, v, f_ncm if c == 0 else f_lar_c)
+            for c, v in enumerate(cols_pc): writer.sheets['PIS_COFINS'].write(0, c, v, f_ncm if c == 0 else f_lar_c)
         return output.getvalue()
 
     st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_base.xlsx", use_container_width=True)
@@ -92,21 +88,19 @@ if cod_cliente:
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v39")
-        ge = st.file_uploader("Gerencial", type=['csv'], key="ge_v39")
-        ae = st.file_uploader("Autenticidade", type=['xlsx'], key="ae_v39")
+        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v43")
+        ge = st.file_uploader("Gerencial", type=['csv'], key="ge_v43")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v39")
-        gs = st.file_uploader("Gerencial", type=['csv'], key="gs_v39")
-        as_f = st.file_uploader("Autenticidade", type=['xlsx'], key="as_v39")
+        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v43")
+        gs = st.file_uploader("Gerencial", type=['csv'], key="gs_v43")
 
     if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 O Sentinela está auditando os dados..."):
+        with st.spinner("🧡 O Sentinela está auditando..."):
             try:
                 df_xe = extrair_dados_xml(xe)
                 df_xs = extrair_dados_xml(xs)
-                relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
+                relat = gerar_excel_final(df_xe, df_xs, ge, gs, cod_cliente)
                 st.success("Auditoria finalizada com sucesso! 🧡")
                 st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
-            except Exception as e: st.error(f"Erro no processamento: {e}")
+            except Exception as e: st.error(f"Erro: {e}")
