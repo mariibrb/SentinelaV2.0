@@ -5,7 +5,7 @@ from sentinela_core import extrair_dados_xml, gerar_excel_final
 # 1. Configuração da Página
 st.set_page_config(page_title="Sentinela Nascel", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Estilo CSS Nascel (Ajustado para reduzir área branca da logo)
+# 2. Estilo CSS Nascel (Ajustado para não sumir com a logo)
 st.markdown("""
 <style>
     .stApp { background-color: #F7F7F7; }
@@ -14,10 +14,17 @@ st.markdown("""
     .stButton>button { background-color: #FF6F00; color: white; border-radius: 20px; font-weight: bold; width: 100%; height: 50px; border: none; }
     .stFileUploader { border: 1px dashed #FF6F00; border-radius: 10px; }
     
-    /* Reduz o espaçamento do bloco da imagem e o topo da página */
-    .block-container { padding-top: 1rem !important; padding-bottom: 0rem !important; }
-    [data-testid="stVerticalBlock"] > div:first-child { margin-top: -50px; }
-    [data-testid="stImage"] { margin-bottom: -30px; margin-top: -20px; }
+    /* Reduz a área branca sem sumir com a logo */
+    .block-container { 
+        padding-top: 2rem !important; 
+        padding-bottom: 0rem !important; 
+    }
+    
+    /* Ajuste fino na margem da imagem central */
+    [data-testid="stImage"] {
+        text-align: center;
+        margin-top: -20px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -45,11 +52,11 @@ with st.sidebar:
     st.download_button("📥 Gabarito IPI", criar_gabarito(["NCM", "ALIQUOTA_IPI", "CST_IPI", "ENQUADRAMENTO"]), "gabarito_ipi.xlsx", use_container_width=True)
 
 # --- 4. TELA PRINCIPAL ---
-# Mantive a proporção que você gostou, mas o CSS acima remove o "vazio"
-c1, c2, c3 = st.columns([1.5, 1, 1.5]) 
+c1, c2, c3 = st.columns([1.2, 1, 1.2]) 
 with c2:
-    if os.path.exists(".streamlit/Sentinela.png"):
-        st.image(".streamlit/Sentinela.png", use_container_width=True)
+    logo_sentinela = ".streamlit/Sentinela.png"
+    if os.path.exists(logo_sentinela):
+        st.image(logo_sentinela, use_container_width=True)
     else:
         st.title("🚀 SENTINELA NASCEL")
 
