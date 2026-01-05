@@ -3,10 +3,10 @@ import os, io, pandas as pd
 import requests
 from sentinela_core import extrair_dados_xml, gerar_excel_final
 
-# 1. Configuração da Página (DEVE ser o primeiro comando)
+# 1. Configuração da Página
 st.set_page_config(page_title="Sentinela - Auditoria Fiscal", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Estilo CSS Sentinela (Revisado para não quebrar a visualização)
+# 2. Estilo CSS Sentinela (Limpo e Funcional)
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -45,7 +45,6 @@ def listar_empresas_no_github():
 
 # --- SIDEBAR ---
 with st.sidebar:
-    # Tenta carregar imagem, mas não trava se não achar
     try: st.image(".streamlit/Sentinela.png", use_container_width=True)
     except: st.title("SENTINELA 🧡")
     
@@ -63,23 +62,23 @@ with st.sidebar:
     st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_base.xlsx", use_container_width=True)
 
 # --- TELA PRINCIPAL ---
-st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 1: Selecionar Empresa</span></div>", unsafe_allow_html=True)
+st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 1: Empresa</span></div>", unsafe_allow_html=True)
 empresas = listar_empresas_no_github()
-cod_cliente = st.selectbox("Selecione a empresa cadastrada no GitHub:", [""] + empresas)
+cod_cliente = st.selectbox("Selecione a empresa cadastrada:", [""] + empresas)
 
 if cod_cliente:
-    st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 2: Carregar Documentos</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 2: Documentos</span></div>", unsafe_allow_html=True)
     
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("📤 XMLs SAÍDA")
-        xs = st.file_uploader("Arraste os XMLs aqui", type='xml', accept_multiple_files=True, key="xs_v68")
-        as_f = st.file_uploader("Relatório Autenticidade Saída", type=['xlsx'], key="as_v68")
+        st.subheader("📤 SAÍDAS")
+        xs = st.file_uploader("XMLs de Saída", type='xml', accept_multiple_files=True, key="xs_v69")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx'], key="as_v69")
     
     with c2:
-        st.subheader("📥 XMLs ENTRADA")
-        xe = st.file_uploader("Arraste os XMLs aqui", type='xml', accept_multiple_files=True, key="xe_v68")
-        ae = st.file_uploader("Relatório Autenticidade Entrada", type=['xlsx'], key="ae_v68")
+        st.subheader("📥 ENTRADAS")
+        xe = st.file_uploader("XMLs de Entrada", type='xml', accept_multiple_files=True, key="xe_v69")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx'], key="ae_v69")
 
     if st.button("🚀 EXECUTAR AUDITORIA"):
         if not xs:
@@ -91,6 +90,6 @@ if cod_cliente:
                     df_xs = extrair_dados_xml(xs)
                     relat = gerar_excel_final(df_xe, df_xs, ae, as_f, cod_cliente)
                     st.success("Auditoria Concluída!")
-                    st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                    st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                 except Exception as e:
                     st.error(f"Erro: {str(e)}")
