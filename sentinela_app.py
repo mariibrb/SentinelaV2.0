@@ -12,11 +12,16 @@ st.markdown("""
     .stApp { background-color: #F7F7F7; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 2px solid #FF6F00; }
     h1, h2, h3 { color: #FF6F00 !important; font-weight: 700; text-align: center; }
+    .stSelectbox { max-width: 600px; margin: 0 auto; }
     .stButton>button, .stDownloadButton>button {
         background-color: #FF6F00; color: white !important;
-        border-radius: 25px !important; font-weight: bold; width: 100%; height: 45px; border: none;
+        border-radius: 25px !important; font-weight: bold; width: 100%; height: 50px; border: none;
     }
     .stFileUploader section { background-color: #FFFFFF; border: 2px dashed #FF6F00 !important; border-radius: 15px !important; }
+    .passo-card {
+        background-color: #FFFFFF; padding: 20px; border-radius: 15px;
+        border-left: 5px solid #FF6F00; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -30,25 +35,14 @@ def listar_empresas_no_github():
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             arquivos = response.json()
-            empresas = sorted(list(set([f['name'].split('-')[0] for f in arquivos if f['name'].endswith('.xlsx')])))
-            return empresas
+            return sorted(list(set([f['name'].split('-')[0] for f in arquivos if f['name'].endswith('.xlsx')])))
     except: pass
     return []
 
 # --- 3. SIDEBAR ---
 with st.sidebar:
-    if os.path.exists(".streamlit/nascel sem fundo.png"):
-        st.image(".streamlit/nascel sem fundo.png", use_container_width=True)
-    
-    st.markdown("---")
-    st.subheader("🏢 Seleção de Cliente")
-    opcoes_empresas = listar_empresas_no_github()
-    if opcoes_empresas:
-        cod_cliente = st.selectbox("Selecione a Empresa", [""] + opcoes_empresas)
-    else:
-        st.warning("⚠️ Verifique a conexão com o GitHub.")
-        cod_cliente = ""
-
+    if os.path.exists(".streamlit/Sentinela.png"): st.image(".streamlit/Sentinela.png", use_container_width=True)
+    if os.path.exists(".streamlit/nascel sem fundo.png"): st.image(".streamlit/nascel sem fundo.png", width=150)
     st.markdown("---")
     st.subheader("📥 Gabarito")
     
@@ -64,55 +58,44 @@ with st.sidebar:
 
             cols_icms = ["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)"]
             pd.DataFrame(columns=cols_icms).to_excel(writer, sheet_name='ICMS', index=False)
-            ws_i = writer.sheets['ICMS']
-            ws_i.set_tab_color('#FF6F00')
-            for c, v in enumerate(cols_icms):
-                ws_i.write(0, c, v, f_ncm if c == 0 else (f_lar_e if c <= 2 else f_lar_c))
-
-            cols_ipi = ["NCM_TIPI", "EX", "DESCRIÇÃO", "ALÍQUOTA (%)"]
-            pd.DataFrame(columns=cols_ipi).to_excel(writer, sheet_name='IPI', index=False)
-            writer.sheets['IPI'].set_tab_color('#757575')
-            for c, v in enumerate(cols_ipi): writer.sheets['IPI'].write(0, c, v, f_ncm if c == 0 else f_cin_e)
+            for c, v in enumerate(cols_icms): writer.sheets['ICMS'].write(0, c, v, f_ncm if c == 0 else (f_lar_e if c <= 2 else f_lar_c))
 
             cols_pc = ["NCM", "CST Entrada", "CST Saída"]
             pd.DataFrame(columns=cols_pc).to_excel(writer, sheet_name='PIS_COFINS', index=False)
-            ws_pc = writer.sheets['PIS_COFINS']
-            ws_pc.set_tab_color('#E0E0E0')
-            for c, v in enumerate(cols_pc): ws_pc.write(0, c, v, f_ncm if c == 0 else f_cin_c)
+            for c, v in enumerate(cols_pc): writer.sheets['PIS_COFINS'].write(0, c, v, f_ncm if c == 0 else f_cin_c)
         return output.getvalue()
 
-    st.download_button("📥 Baixar Gabarito Nascel", criar_gabarito_nascel(), "gabarito_nascel.xlsx", use_container_width=True)
-
-    # CAMPO EM CONSTRUÇÃO (Abaixo do Gabarito)
+    st.download_button("📥 Baixar Gabarito", criar_gabarito_nascel(), "gabarito_nascel.xlsx", use_container_width=True)
     st.markdown("---")
     st.subheader("🔄 Base de Referência")
-    base_bloqueada = st.file_uploader("Upload da Base (Opcional)", type=['xlsx'], key='base_construcao')
-    if base_bloqueada:
-        st.error("🚧 CAMPO EM CONSTRUÇÃO: O arquivo subido não será utilizado nesta versão.")
+    if st.file_uploader("Upload da Base", type=['xlsx'], key='base_construcao'): st.error("🚧 CAMPO EM CONSTRUÇÃO")
 
 # --- 4. TELA PRINCIPAL ---
-st.markdown("---")
-col_e, col_s = st.columns(2, gap="large")
-with col_e:
-    st.subheader("📥 FLUXO ENTRADAS")
-    xe = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key="xe_v14")
-    ge = st.file_uploader("📊 Gerencial Entrada (CSV)", type=['csv'], key="ge_v14")
-    ae = st.file_uploader("🔍 Autenticidade Entrada (XLSX)", type=['xlsx'], key="ae_v14")
-with col_s:
-    st.subheader("📤 FLUXO SAÍDAS")
-    xs = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key="xs_v14")
-    gs = st.file_uploader("📊 Gerencial Saída (CSV)", type=['csv'], key="gs_v14")
-    as_f = st.file_uploader("🔍 Autenticidade Saída (XLSX)", type=['xlsx'], key="as_v14")
+st.markdown("<div class='passo-card'><h3>👣 PASSO 1: Selecione o cliente</h3></div>", unsafe_allow_html=True)
+col_c = st.columns([1, 2, 1])
+with col_c[1]:
+    cod_cliente = st.selectbox("Empresas:", [""] + listar_empresas_no_github())
 
-if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary"):
-    if not xe and not xs: st.warning("Suba ao menos um XML.")
-    elif not cod_cliente: st.warning("Por favor, selecione uma empresa na lista.")
-    else:
-        with st.spinner("🧡 Auditando com base no GitHub..."):
+if cod_cliente:
+    st.markdown("<div class='passo-card'><h3>📂 PASSO 2: Inclua os arquivos disponíveis</h3></div>", unsafe_allow_html=True)
+    c_e, c_s = st.columns(2, gap="large")
+    with c_e:
+        st.subheader("📥 ENTRADAS")
+        xe = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xe_v17")
+        ge = st.file_uploader("Gerencial (CSV)", type=['csv'], key="ge_v17")
+        ae = st.file_uploader("Autenticidade (XLSX)", type=['xlsx'], key="ae_v17")
+    with c_s:
+        st.subheader("📤 SAÍDAS")
+        xs = st.file_uploader("XMLs", type='xml', accept_multiple_files=True, key="xs_v17")
+        gs = st.file_uploader("Gerencial (CSV)", type=['csv'], key="gs_v17")
+        as_f = st.file_uploader("Autenticidade (XLSX)", type=['xlsx'], key="as_v17")
+
+    st.markdown("---")
+    if st.columns([1, 1, 1])[1].button("🚀 EXECUTAR AUDITORIA", type="primary"):
+        with st.spinner("🧡 Processando..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
-                # Passamos None para b_unica para garantir que use apenas a do GitHub
                 relat = gerar_excel_final(df_xe, df_xs, None, ae, as_f, ge, gs, cod_cliente)
-                st.success(f"Auditoria {cod_cliente} finalizada! 🧡")
-                st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Relatorio_{cod_cliente}.xlsx", use_container_width=True)
-            except Exception as e: st.error(f"Erro: {e}")
+                st.success("Relatório gerado! Verifique as abas de aviso se algum dado faltou. 🧡")
+                st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+            except Exception as e: st.error(f"Erro ao processar: {e}")
