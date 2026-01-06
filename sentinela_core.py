@@ -3,7 +3,6 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import re, io, requests, streamlit as st
 
-# REGRA GERAL ICMS: TABELA DE ALÍQUOTAS INTERNAS PADRÃO
 ALIQUOTAS_UF = {
     'AC': 19.0, 'AL': 19.0, 'AM': 20.0, 'AP': 18.0, 'BA': 20.5, 'CE': 20.0,
     'DF': 20.0, 'ES': 17.0, 'GO': 19.0, 'MA': 22.0, 'MG': 18.0, 'MS': 17.0,
@@ -21,19 +20,18 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-def buscar_base_no_repositorio(cod_cliente):
+def buscar_github(nome_arquivo):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
-    if not token or not cod_cliente: return None
-    url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias"
+    url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias/{nome_arquivo}"
     headers = {"Authorization": f"token {token}"}
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
-            for item in res.json():
-                if item['name'].startswith(str(cod_cliente)):
-                    f_res = requests.get(item['download_url'], headers=headers)
-                    return io.BytesIO(f_res.content)
+            if isinstance(res.json(), list): # Se for pasta, não baixa
+                return None
+            f_res = requests.get(res.json()['download_url'], headers=headers)
+            return io.BytesIO(f_res.content)
     except: pass
     return None
 
@@ -54,10 +52,8 @@ def extrair_dados_xml(files):
                     tag_limpa = elem.tag.split('}')[-1]
                     if tag_limpa in tags_alvo: return elem.text
                 return ""
-            
             inf = root.find('.//infNFe'); emit = root.find('.//emit'); dest = root.find('.//dest')
             chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
-            
             for det in root.findall('.//det'):
                 prod = det.find('prod'); imp = det.find('imposto')
                 icms_node = imp.find('.//ICMS') if imp is not None else None
@@ -82,97 +78,85 @@ def extrair_dados_xml(files):
     return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
-    base_f = buscar_base_no_repositorio(cod_cliente)
+    # Carregamento: Empresa (ICMS/PC) + Auditoria IPI (Arquivo nomeado TIPI)
+    f_cliente = buscar_github(f"{cod_cliente}-Bases_Tributárias.xlsx")
+    f_tipi = buscar_github("TIPI.csv")
+    
     try:
-        base_icms = pd.read_excel(base_f, sheet_name='ICMS'); base_icms['NCM_KEY'] = base_icms['NCM'].astype(str).str.zfill(8)
-        base_pc = pd.read_excel(base_f, sheet_name='PIS_COFINS'); base_pc['NCM_KEY'] = base_pc['NCM'].astype(str).str.zfill(8)
-        base_ipi = pd.read_excel(base_f, sheet_name='IPI'); base_ipi['NCM_KEY'] = base_ipi['NCM_TIPI'].astype(str).str.zfill(8)
-    except: base_icms, base_pc, base_ipi = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        base_icms = pd.read_excel(f_cliente, sheet_name='ICMS'); base_icms['NCM_KEY'] = base_icms['NCM'].astype(str).str.zfill(8)
+        base_pc = pd.read_excel(f_cliente, sheet_name='PIS_COFINS'); base_pc['NCM_KEY'] = base_pc['NCM'].astype(str).str.zfill(8)
+    except: base_icms, base_pc = pd.DataFrame(), pd.DataFrame()
 
-    try: tipi_p = pd.read_csv('394-Bases_Tributarias.xlsx - IPI.csv'); tipi_p['NCM_KEY'] = tipi_p['NCM_TIPI'].astype(str).str.zfill(8)
-    except: tipi_p = pd.DataFrame()
+    try: 
+        tipi_df = pd.read_csv(f_tipi)
+        tipi_df['NCM_KEY'] = tipi_df['NCM'].astype(str).str.replace('.', '').str.strip().str.zfill(8)
+    except: tipi_df = pd.DataFrame()
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         pd.DataFrame([["AUDITORIA FISCAL SENTINELA"]]).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
         
-        # 👣 1. DADOS GERENCIAIS (ABAS REAIS)
-        for f, s in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
-            if f:
+        # 👣 GERENCIAIS COMO ABAS
+        for f_obj, s_name in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
+            if f_obj:
                 try:
-                    f.seek(0)
-                    df_g = pd.read_excel(f) if f.name.endswith('.xlsx') else pd.read_csv(f)
-                    df_g.to_excel(writer, sheet_name=s, index=False)
+                    f_obj.seek(0)
+                    df_g = pd.read_excel(f_obj) if f_obj.name.endswith('.xlsx') else pd.read_csv(f_obj)
+                    df_g.to_excel(writer, sheet_name=s_name, index=False)
                 except: pass
 
-        # 👣 2. STATUS DE AUTENTICIDADE
-        def get_status(f):
-            if not f: return {}
+        # Map de Status
+        st_map = {}
+        if as_f:
             try:
-                f.seek(0)
-                df = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None)
-                df[0] = df[0].astype(str).str.replace('NFe', '').str.strip()
-                return df.set_index(0)[5].to_dict()
-            except: return {}
-        
-        st_map = get_status(as_f)
+                as_f.seek(0)
+                df_auth = pd.read_excel(as_f, header=None) if as_f.name.endswith('.xlsx') else pd.read_csv(as_f, header=None)
+                df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
+                st_map = df_auth.set_index(0)[5].to_dict()
+            except: pass
 
         if not df_xs.empty:
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # --- ICMS AUDIT (4% + REGRA GERAL) ---
+            # --- 1. ICMS ---
             df_i = df_xs.copy()
             def audit_icms(r):
                 info = base_icms[base_icms['NCM_KEY'] == r['NCM']] if not base_icms.empty else pd.DataFrame()
-                diag_st = "✅ OK"
-                if r['CST-ICMS'] == '10' and r['VLR-ICMS-ST'] == 0: diag_st = "❌ Alerta: CST 10 sem ST"
                 val_b = safe_float(info['ALIQ (INTERNA)'].iloc[0]) if not info.empty else 0.0
                 if val_b == 0:
                     if r['UF_EMIT'] != r['UF_DEST']:
                         alq_e = 4.0 if str(r['ORIGEM']) in ['1', '2', '3', '8'] else 12.0
-                        fonte = "Interestadual (Regra Geral)"
-                    else: alq_e = ALIQUOTAS_UF.get(r['UF_EMIT'], 18.0); fonte = f"Interna {r['UF_EMIT']}"
-                else: alq_e = val_b; fonte = "Base Cadastrada"
+                    else: alq_e = ALIQUOTAS_UF.get(r['UF_EMIT'], 18.0)
+                else: alq_e = val_b
                 diag = "✅ Alq OK" if abs(r['ALQ-ICMS'] - alq_e) < 0.01 else f"❌ XML {r['ALQ-ICMS']}% vs {alq_e}%"
                 comp = max(0, (alq_e - r['ALQ-ICMS']) * r['BC-ICMS'] / 100)
-                return pd.Series([r['Situação Nota'], fonte, diag_st, diag, f"R$ {comp:,.2f}"])
-            
-            df_i[['Situação Nota', 'Fonte', 'Check ST', 'Diagnóstico', 'Complemento']] = df_i.apply(audit_icms, axis=1)
-            cols = ['Situação Nota', 'Fonte', 'Check ST', 'Diagnóstico', 'Complemento'] + [c for c in df_i.columns if c not in ['Situação Nota', 'Fonte', 'Check ST', 'Diagnóstico', 'Complemento']]
+                return pd.Series([diag, f"R$ {comp:,.2f}"])
+            df_i[['Diagnóstico', 'Complemento']] = df_i.apply(audit_icms, axis=1)
+            cols = ['Situação Nota'] + [c for c in df_i.columns if c != 'Situação Nota']
             df_i[cols].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # --- PIS/COFINS AUDIT ---
-            df_pc = df_xs.copy()
-            def audit_pc(r):
-                info = base_pc[base_pc['NCM_KEY'] == r['NCM']] if not base_pc.empty else pd.DataFrame()
-                if info.empty: return "❌ NCM ausente na Base"
-                cst_b = str(info['CST Saída'].iloc[0]).zfill(2)
-                return "✅ CST OK" if r['CST-PIS'] == cst_b else f"❌ XML {r['CST-PIS']} vs Base {cst_b}"
-            df_pc['Check PIS/COF'] = df_pc.apply(audit_pc, axis=1)
-            cols_pc = ['Situação Nota', 'Check PIS/COF'] + [c for c in df_pc.columns if c not in ['Situação Nota', 'Check PIS/COF']]
-            df_pc[cols_pc].to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
-
-            # --- IPI AUDIT ---
+            # --- 2. IPI (TIPI) ---
             df_ip = df_xs.copy()
             def audit_ipi(r):
-                info_p = tipi_p[tipi_p['NCM_KEY'] == r['NCM']] if not tipi_p.empty else pd.DataFrame()
-                val_p = safe_float(info_p['ALÍQUOTA (%)'].iloc[0]) if not info_p.empty else 0.0
-                return "✅ Alq OK" if abs(r['ALQ-IPI'] - val_p) < 0.01 else f"❌ XML {r['ALQ-IPI']}% vs TIPI {val_p}%"
-            df_ip['Check IPI'] = df_ip.apply(audit_ipi, axis=1)
-            cols_ip = ['Situação Nota', 'Check IPI'] + [c for c in df_ip.columns if c not in ['Situação Nota', 'Check IPI']]
+                match = tipi_df[tipi_df['NCM_KEY'] == r['NCM']] if not tipi_df.empty else pd.DataFrame()
+                val_p = safe_float(match['ALÍQUOTA (%)'].iloc[0]) if not match.empty else 0.0
+                diag = "✅ Alq OK" if abs(r['ALQ-IPI'] - val_p) < 0.01 else f"❌ XML {r['ALQ-IPI']}% vs TIPI {val_p}%"
+                return pd.Series([diag, val_p])
+            df_ip[['Diagnóstico IPI', 'Alíquota TIPI']] = df_ip.apply(audit_ipi, axis=1)
+            cols_ip = ['Situação Nota'] + [c for c in df_ip.columns if c != 'Situação Nota']
             df_ip[cols_ip].to_excel(writer, sheet_name='IPI_AUDIT', index=False)
 
-            # --- DIFAL AUDIT (CPF/CNPJ + indIEDest) ---
+            # --- 3. DIFAL ---
             df_dif = df_xs.copy()
             def audit_difal(r):
                 if r['UF_EMIT'] != r['UF_DEST']:
-                    v_xml = r['VAL-DIFAL'] + r['VAL-FCP-DEST']
+                    v = r['VAL-DIFAL'] + r['VAL-FCP-DEST']
                     if (r['CPF_DEST'] and len(str(r['CPF_DEST'])) > 5) or r['indIEDest'] == '9':
-                        return "✅ DIFAL OK" if v_xml > 0 else "⚠️ Alerta: Sem DIFAL destacado"
-                    return "Contribuinte: Verificar Diferencial"
+                        return "✅ DIFAL OK" if v > 0 else "⚠️ Alerta: Sem DIFAL destacado"
+                    return "Contribuinte: Verificar"
                 return "Operação Interna"
             df_dif['Análise DIFAL'] = df_dif.apply(audit_difal, axis=1)
-            cols_d = ['Situação Nota', 'Análise DIFAL'] + [c for c in df_dif.columns if c not in ['Situação Nota', 'Análise DIFAL']]
+            cols_d = ['Situação Nota'] + [c for c in df_dif.columns if c != 'Situação Nota']
             df_dif[cols_d].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
     return output.getvalue()
