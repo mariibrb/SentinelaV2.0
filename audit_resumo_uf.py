@@ -6,8 +6,8 @@ UFS_BRASIL = [
     'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'
 ]
 
-# Estados que possuem IE Substituto (Destaque Laranja e Abatimento)
-UFS_COM_IE = ['AP', 'BA', 'ES', 'MG', 'MT', 'PA', 'PB', 'PE', 'PR', 'RJ', 'RN', 'RS', 'SC']
+# Estados que possuem IE Substituto (REVISADO: RN, PB, PA e CE removidos)
+UFS_COM_IE = ['AP', 'BA', 'ES', 'MG', 'MT', 'PE', 'PR', 'RJ', 'RS', 'SC']
 
 def gerar_resumo_uf(df, writer):
     if df.empty:
@@ -44,7 +44,7 @@ def gerar_resumo_uf(df, writer):
     res_s = preparar_tabela_completa(df_validas[df_validas['SENTIDO'] == 'SAÍDA'])
     res_e = preparar_tabela_completa(df_validas[df_validas['SENTIDO'] == 'ENTRADA'])
 
-    # 4. Cálculo do Saldo Líquido (Abate apenas nos estados em laranja)
+    # 4. Cálculo do Saldo Líquido (Abate apenas nos estados na lista UFS_COM_IE)
     res_saldo = pd.DataFrame({'ESTADO (UF)': UFS_BRASIL})
     res_saldo['IE SUBSTITUTO'] = res_s['IE_SUBST']
     for col_xml, col_final in [('VAL-ICMS-ST', 'ST LÍQUIDO'), ('VAL-DIFAL', 'DIFAL LÍQUIDO'), 
@@ -62,7 +62,7 @@ def gerar_resumo_uf(df, writer):
     worksheet = workbook.add_worksheet('DIFAL_ST_FECP')
     writer.sheets['DIFAL_ST_FECP'] = worksheet
     
-    worksheet.hide_gridlines(2) # Sem linhas de grade
+    worksheet.hide_gridlines(2) # Remove linhas de grade
 
     # Formatos
     title_fmt = workbook.add_format({'bold': True, 'font_color': '#FF6F00', 'font_size': 11})
@@ -73,7 +73,7 @@ def gerar_resumo_uf(df, writer):
     num_fmt = workbook.add_format({'num_format': '#,##0.00', 'border': 1})
     border_fmt = workbook.add_format({'border': 1})
 
-    # Tabelas Lado a Lado (Espaçamento Reduzido)
+    # Tabelas Lado a Lado (Espaçamento Reduzido: Colunas 0, 7 e 14)
     tables = [
         (res_s, 0, "1. SAÍDAS (DÉBITO)"), 
         (res_e, 7, "2. ENTRADAS (CRÉDITO)"), 
@@ -86,20 +86,4 @@ def gerar_resumo_uf(df, writer):
             worksheet.write(2, start_col + col_num, value, header_fmt)
         
         for row_num, row_data in enumerate(df_t.values):
-            uf_atual = str(row_data[0]).strip()
-            for col_num, value in enumerate(row_data):
-                # Se for estado com IE, pinta a célula de laranja (texto ou número)
-                if uf_atual in UFS_COM_IE:
-                    current_fmt = orange_num_fill if isinstance(value, (int, float)) else orange_fill
-                else:
-                    current_fmt = num_fmt if isinstance(value, (int, float)) else border_fmt
-                
-                worksheet.write(row_num + 3, start_col + col_num, value, current_fmt)
-
-        # Totais no Rodapé
-        worksheet.write(30, start_col, "TOTAL GERAL", total_fmt)
-        worksheet.write(30, start_col + 1, "", total_fmt)
-        for i in range(2, 6):
-            c_idx = start_col + i
-            c_let = chr(65 + c_idx) if c_idx < 26 else f"A{chr(65 + c_idx - 26)}"
-            worksheet.write(30, c_idx, f'=SUM({c_let}4:{c_let}30)', total_fmt)
+            uf_atual = str(row
