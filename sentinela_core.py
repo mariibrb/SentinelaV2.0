@@ -26,7 +26,7 @@ def buscar_github(nome_arquivo):
     url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias/{nome_arquivo}"
     headers = {"Authorization": f"token {token}"}
     try:
-        res = requests.get(url, headers=headers, timeout=10)
+        res = requests.get(url, headers=headers, timeout=20) # Blindagem contra queda de rede
         if res.status_code == 200:
             if isinstance(res.json(), list): return None
             f_res = requests.get(res.json()['download_url'], headers=headers)
@@ -40,19 +40,25 @@ def extrair_dados_xml(files):
     for f in files:
         try:
             f.seek(0)
-            xml_data = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', f.read().decode('utf-8', errors='replace'))
+            # Limpeza de namespaces para evitar erros de parser
+            xml_content = f.read().decode('utf-8', errors='replace')
+            xml_data = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_content)
             root = ET.fromstring(xml_data)
+            
             def buscar_tag(tag, node):
                 alvo = node.find(f'.//{tag}')
                 return alvo.text if alvo is not None and alvo.text is not None else ""
+            
             def buscar_recursivo(node, tags_alvo):
                 if node is None: return ""
                 for elem in node.iter():
                     tag_limpa = elem.tag.split('}')[-1]
                     if tag_limpa in tags_alvo: return elem.text
                 return ""
+            
             inf = root.find('.//infNFe'); emit = root.find('.//emit'); dest = root.find('.//dest')
             chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
+            
             for det in root.findall('.//det'):
                 prod = det.find('prod'); imp = det.find('imposto')
                 icms_node = imp.find('.//ICMS') if imp is not None else None
@@ -71,12 +77,8 @@ def extrair_dados_xml(files):
                     "CST-IPI": buscar_recursivo(imp.find('.//IPI'), ['CST']), "ALQ-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['pIPI'])),
                     "VAL-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['vIPI'])),
                     "VAL-DIFAL": safe_float(buscar_recursivo(imp, ['vICMSUFDest'])), "VAL-FCP-DEST": safe_float(buscar_recursivo(imp, ['vFCPUFDest'])),
-                    # 👣 CAMPOS ADICIONAIS ST E FECP
-                    "VAL-ICMS-ST": safe_float(buscar_recursivo(imp, ['vICMSST'])),
-                    "BC-ICMS-ST": safe_float(buscar_recursivo(imp, ['vBCST'])),
-                    "VAL-FCP-ST": safe_float(buscar_recursivo(imp, ['vFCPST'])),
-                    "VAL-FCP-RET": safe_float(buscar_recursivo(imp, ['vFCPSTRet'])),
-                    # 👣 TAGS IBS/CBS
+                    "VAL-ICMS-ST": safe_float(buscar_recursivo(imp, ['vICMSST'])), "BC-ICMS-ST": safe_float(buscar_recursivo(imp, ['vBCST'])),
+                    "VAL-FCP-ST": safe_float(buscar_recursivo(imp, ['vFCPST'])), "VAL-FCP-RET": safe_float(buscar_recursivo(imp, ['vFCPSTRet'])),
                     "VAL-IBS": safe_float(buscar_recursivo(imp, ['vIBS'])), "ALQ-IBS": safe_float(buscar_recursivo(imp, ['pIBS'])),
                     "VAL-CBS": safe_float(buscar_recursivo(imp, ['vCBS'])), "ALQ-CBS": safe_float(buscar_recursivo(imp, ['pCBS']))
                 }
@@ -98,16 +100,18 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        pd.DataFrame([["SENTINELA FISCAL - RELATÓRIO CONSOLIDADO"]]).to_excel(writer, sheet_name='RESUMO', index=False, header=False)
+        pd.DataFrame([["RELATÓRIO CONSOLIDADO - SENTINELA"]]).to_excel(writer, sheet_name='RESUMO', index=False, header=False)
         
         # 👣 GERENCIAIS COMO ABAS
         for f_obj, s_name in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
             if f_obj:
                 try:
                     f_obj.seek(0)
-                    (pd.read_csv(f_obj) if f_obj.name.endswith('.csv') else pd.read_excel(f_obj)).to_excel(writer, sheet_name=s_name, index=False)
+                    df_g = pd.read_excel(f_obj) if f_obj.name.endswith('.xlsx') else pd.read_csv(f_obj)
+                    df_g.to_excel(writer, sheet_name=s_name, index=False)
                 except: pass
 
+        # Map de Status Autenticidade
         st_map = {}
         if as_f:
             try:
@@ -136,7 +140,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
             cols_i = ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS'] + [c for c in df_i.columns if c not in ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS']]
             df_i[cols_i].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # --- 2. IPI AUDIT (TIPI - CONGELADO) ---
+            # --- 2. IPI AUDIT (CONGELADO) ---
             df_ip = df_xs.copy()
             def audit_ipi(r):
                 match = tipi_df[tipi_df['NCM_KEY'] == r['NCM']] if not tipi_df.empty else pd.DataFrame()
@@ -146,7 +150,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
             cols_ip = ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS', 'Diagnóstico IPI'] + [c for c in df_ip.columns if c not in ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS', 'Diagnóstico IPI']]
             df_ip[cols_ip].to_excel(writer, sheet_name='IPI_AUDIT', index=False)
 
-            # --- 3. NOVA ABA: DIFAL_ST_FECP (LEITURA) ---
+            # --- 3. DIFAL_ST_FECP (LEITURA) ---
             df_st = df_xs.copy()
             cols_st = ['Situação Nota', 'NUM_NF', 'CHAVE_ACESSO', 'CFOP', 'NCM', 'VPROD', 'VAL-DIFAL', 'VAL-FCP-DEST', 'VAL-ICMS-ST', 'BC-ICMS-ST', 'VAL-FCP-ST', 'VAL-FCP-RET']
             df_st[cols_st].to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False)
