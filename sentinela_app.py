@@ -3,10 +3,10 @@ import os, io, pandas as pd
 import requests
 from sentinela_core import extrair_dados_xml, gerar_excel_final
 
-# 1. Configuração da Página
+# Configuração da Página - Visual Sentinela
 st.set_page_config(page_title="Sentinela - Auditoria Fiscal", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Estilo CSS Sentinela
+# Estilo CSS Sentinela - Restaurado integralmente
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -60,17 +60,17 @@ if cod_cliente:
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("ZIP Entradas", type=['zip'], key="xe_v_master_final")
-        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_master_final")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_master_final")
+        xe = st.file_uploader("ZIP Entradas", type=['zip'], key="xe_v_master_8")
+        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_master_8")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_master_8")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("ZIP Saídas", type=['zip'], key="xs_v_master_final")
-        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_master_final")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_master_final")
+        xs = st.file_uploader("ZIP Saídas", type=['zip'], key="xs_v_master_8")
+        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_master_8")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_master_8")
 
     if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 Sentinela processando com motor maximalista..."):
+        with st.spinner("🧡 Sentinela processando o motor maximalista..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
