@@ -6,8 +6,8 @@ UFS_BRASIL = [
     'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'
 ]
 
-# Estados que possuem IE Substituto (Laranja) conforme sua imagem
-UFS_COM_IE = ['AP', 'BA', 'CE', 'ES', 'MG', 'MT', 'PA', 'PB', 'PE', 'PR', 'RJ', 'RN', 'RS', 'SC']
+# Estados que possuem IE Substituto (REVISADO: Ceará Removido)
+UFS_COM_IE = ['AP', 'BA', 'ES', 'MG', 'MT', 'PA', 'PB', 'PE', 'PR', 'RJ', 'RN', 'RS', 'SC']
 
 def gerar_resumo_uf(df, writer):
     if df.empty:
@@ -15,7 +15,7 @@ def gerar_resumo_uf(df, writer):
 
     df_temp = df.copy()
 
-    # 1. Filtro Rigoroso: Apenas Notas Autorizadas e Válidas (Ignora Cancelamento de NF-e homologado)
+    # 1. Filtro Rigoroso: Apenas Notas Autorizadas e Válidas (Ignora Cancelamentos)
     df_validas = df_temp[
         (df_temp['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)) &
         (~df_temp['Situação Nota'].astype(str).str.upper().str.contains('CANCEL', na=False))
@@ -30,71 +30,72 @@ def gerar_resumo_uf(df, writer):
 
     df_validas['SENTIDO'] = df_validas['CFOP'].apply(identificar_sentido)
 
-    # 3. Função para preparar tabela completa (27 UFs)
+    # 3. Preparação das Tabelas (27 UFs)
     def preparar_tabela_completa(dataframe_origem):
         agrupado = dataframe_origem.groupby(['UF_DEST']).agg({
             'VAL-ICMS-ST': 'sum', 'VAL-DIFAL': 'sum', 'VAL-FCP': 'sum', 'VAL-FCP-ST': 'sum'
         }).reset_index()
-        
         base_completa = pd.DataFrame({'UF_DEST': UFS_BRASIL})
         final = pd.merge(base_completa, agrupado, on='UF_DEST', how='left').fillna(0)
-        
-        # IE de Substituto
         ie_map = dataframe_origem.groupby('UF_DEST')['IE_SUBST'].first().to_dict()
         final['IE_SUBST'] = final['UF_DEST'].map(ie_map).fillna("")
-        
         return final[['UF_DEST', 'IE_SUBST', 'VAL-ICMS-ST', 'VAL-DIFAL', 'VAL-FCP', 'VAL-FCP-ST']]
 
     res_s = preparar_tabela_completa(df_validas[df_validas['SENTIDO'] == 'SAÍDA'])
     res_e = preparar_tabela_completa(df_validas[df_validas['SENTIDO'] == 'ENTRADA'])
 
-    # 4. Cálculo do Saldo Líquido com Lógica de Abatimento Condicional
+    # 4. Cálculo do Saldo Líquido (Abate apenas nos estados em laranja)
     res_saldo = pd.DataFrame({'ESTADO (UF)': UFS_BRASIL})
     res_saldo['IE SUBSTITUTO'] = res_s['IE_SUBST']
-
-    # Lógica solicitada: Abate devolução apenas se for estado com IE (Laranja)
     for col_xml, col_final in [('VAL-ICMS-ST', 'ST LÍQUIDO'), ('VAL-DIFAL', 'DIFAL LÍQUIDO'), 
                                ('VAL-FCP', 'FCP LÍQUIDO'), ('VAL-FCP-ST', 'FCP-ST LÍQUIDO')]:
-        
-        # Se UF está na lista laranja, faz Saída - Entrada. Senão, mantém apenas Saída.
         res_saldo[col_final] = res_saldo['ESTADO (UF)'].apply(
             lambda x: (res_s.loc[res_s['UF_DEST'] == x, col_xml].values[0] - res_e.loc[res_e['UF_DEST'] == x, col_xml].values[0])
             if x in UFS_COM_IE else res_s.loc[res_s['UF_DEST'] == x, col_xml].values[0]
         )
 
-    # 5. Gravação e Formatação
+    # 5. Gravação e Formatação Excel
     res_s.columns = ['ESTADO (UF)', 'IE SUBSTITUTO', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
     res_e.columns = ['ESTADO (UF) ', 'IE SUBSTITUTO ', 'ST TOTAL ', 'DIFAL TOTAL ', 'FCP TOTAL ', 'FCP-ST TOTAL ']
 
     workbook = writer.book
     worksheet = workbook.add_worksheet('DIFAL_ST_FECP')
     writer.sheets['DIFAL_ST_FECP'] = worksheet
+    
+    # REMOVER LINHAS DE GRADE
+    worksheet.hide_gridlines(2)
 
     # Formatos
-    title_fmt = workbook.add_format({'bold': True, 'font_color': '#FF6F00', 'font_size': 12})
-    orange_row = workbook.add_format({'bg_color': '#FFDAB9', 'border': 1}) # Laranja claro
-    total_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'num_format': '#,##0.00'})
+    title_fmt = workbook.add_format({'bold': True, 'font_color': '#FF6F00', 'font_size': 11})
+    orange_fill = workbook.add_format({'bg_color': '#FFCC99', 'border': 1}) 
+    header_fmt = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E0E0E0'})
+    total_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'num_format': '#,##0.00'})
+    num_fmt = workbook.add_format({'num_format': '#,##0.00', 'border': 1})
+    border_fmt = workbook.add_format({'border': 1})
 
-    # Títulos
-    worksheet.write(0, 0, "1. SAÍDAS (DÉBITO)", title_fmt)
-    worksheet.write(0, 8, "2. ENTRADAS (CRÉDITO)", title_fmt)
-    worksheet.write(0, 16, "3. SALDO LÍQUIDO (RECOLHER)", title_fmt)
+    # Tabelas Lado a Lado
+    tables = [(res_s, 0, "1. SAÍDAS (DÉBITO)"), (res_e, 8, "2. ENTRADAS (CRÉDITO)"), (res_saldo, 16, "3. SALDO LÍQUIDO (RECOLHER)")]
+    
+    for df_t, start_col, title in tables:
+        worksheet.write(0, start_col, title, title_fmt)
+        for col_num, value in enumerate(df_t.columns):
+            worksheet.write(2, start_col + col_num, value, header_fmt)
+        
+        for row_num, row_data in enumerate(df_t.values):
+            uf_atual = str(row_data[0]).strip()
+            for col_num, value in enumerate(row_data):
+                # Aplicar laranja apenas nas colunas de Estado e IE dos estados da lista UFS_COM_IE
+                if uf_atual in UFS_COM_IE and col_num in [0, 1]:
+                    current_fmt = orange_fill
+                else:
+                    current_fmt = num_fmt if isinstance(value, (int, float)) else border_fmt
+                
+                worksheet.write(row_num + 3, start_col + col_num, value, current_fmt)
 
-    # Escrever tabelas
-    res_s.to_excel(writer, sheet_name='DIFAL_ST_FECP', startrow=2, startcol=0, index=False)
-    res_e.to_excel(writer, sheet_name='DIFAL_ST_FECP', startrow=2, startcol=8, index=False)
-    res_saldo.to_excel(writer, sheet_name='DIFAL_ST_FECP', startrow=2, startcol=16, index=False)
-
-    # Aplicar Destaque Laranja nas linhas de estados com IE
-    for row_num, uf in enumerate(UFS_BRASIL):
-        if uf in UFS_COM_IE:
-            # Aplica o formato laranja nas 3 tabelas
-            worksheet.set_row(row_num + 3, None, orange_row)
-
-    # Totais Gerais no Rodapé
-    for col_set in [0, 8, 16]:
-        worksheet.write(30, col_set, "TOTAL GERAL", total_fmt)
+        # Totais
+        worksheet.write(30, start_col, "TOTAL GERAL", total_fmt)
+        worksheet.write(30, start_col + 1, "", total_fmt)
         for i in range(2, 6):
-            col_idx = col_set + i
-            col_letter = chr(65 + col_idx) if col_idx < 26 else f"A{chr(65 + col_idx - 26)}"
-            worksheet.write(30, col_idx, f'=SUM({col_letter}4:{col_letter}30)', total_fmt)
+            c_idx = start_col + i
+            c_let = chr(65 + c_idx) if c_idx < 26 else f"A{chr(65 + c_idx - 26)}"
+            worksheet.write(30, c_idx, f'=SUM({c_let}4:{c_let}30)', total_fmt)
