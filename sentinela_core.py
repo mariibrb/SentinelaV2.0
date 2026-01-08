@@ -93,18 +93,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # --- ABA RESUMO COM MANUAL COMPLETO ---
-        man = [
-            ["MANUAL DE DIAGNÓSTICOS SENTINELA"], [""],
-            ["ABA ICMS_AUDIT: Confronto XML vs Gabarito/UF. Inclui Trava 4% para importados."],
-            ["ABA IPI_AUDIT: Validação NCM vs TIPI.csv federal."],
-            ["ABA PIS_COFINS_AUDIT: Validação de CST conforme cadastro cliente."],
-            ["ABA DIFAL_AUDIT: Análise de obrigatoriedade (CPF/Isento)."],
-            ["ABA DIFAL_ST_FECP: Resumo consolidado para guia (Ignora notas canceladas)."]
-        ]
+        # 1. RESUMO (MANUAL)
+        man = [["MANUAL DE DIAGNÓSTICOS"], [""], ["DIFAL_ST_FECP: Consolidação de valores APENAS de notas Autorizadas."]]
         pd.DataFrame(man).to_excel(writer, sheet_name='RESUMO', index=False, header=False)
         
-        # --- ABAS GERENCIAIS ---
+        # 2. GERENCIAIS
         for f_obj, s_name in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
             if f_obj:
                 try:
@@ -123,9 +116,10 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
 
         if not df_xs.empty:
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
-            cols_xml = list(df_xs.columns); cols_xml.remove('Situação Nota')
+            cols_xml = [c for c in df_xs.columns if c != 'Situação Nota']
 
-            # 1. ICMS_AUDIT
+            # --- AUDITORIAS INDIVIDUAIS ---
+            # ICMS
             df_i = df_xs.copy()
             def audit_icms(r):
                 info = base_icms[base_icms['NCM_KEY'] == r['NCM']] if not base_icms.empty else pd.DataFrame()
@@ -139,7 +133,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
             df_i[['Diagnóstico', 'Complemento']] = df_i.apply(audit_icms, axis=1)
             df_i[cols_xml + ['Situação Nota', 'Diagnóstico', 'Complemento']].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # 2. IPI_AUDIT
+            # IPI
             df_ip = df_xs.copy()
             def audit_ipi(r):
                 match = tipi_df[tipi_df['NCM_KEY'] == r['NCM']] if not tipi_df.empty else pd.DataFrame()
@@ -148,7 +142,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
             df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
             df_ip[cols_xml + ['Situação Nota', 'Diagnóstico IPI']].to_excel(writer, sheet_name='IPI_AUDIT', index=False)
 
-            # 3. PIS_COFINS_AUDIT
+            # PIS/COFINS
             df_pc = df_xs.copy()
             def audit_pc(r):
                 info = base_pc[base_pc['NCM_KEY'] == r['NCM']] if not base_pc.empty else pd.DataFrame()
@@ -158,7 +152,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
             df_pc['Diagnóstico P/C'] = df_pc.apply(audit_pc, axis=1)
             df_pc[cols_xml + ['Situação Nota', 'Diagnóstico P/C']].to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
 
-            # 4. DIFAL_AUDIT
+            # DIFAL
             df_dif = df_xs.copy()
             def audit_difal(r):
                 if r['UF_EMIT'] != r['UF_DEST']:
@@ -169,13 +163,13 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
             df_dif['Análise DIFAL'] = df_dif.apply(audit_difal, axis=1)
             df_dif[cols_xml + ['Situação Nota', 'Análise DIFAL']].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
-            # --- 5. DIFAL_ST_FECP (RESTABELECIDA COM FILTRO DE AUTORIZADAS) ---
+            # --- ABA DIFAL_ST_FECP (CONSOLIDADA POR ESTADO - FILTRO DE AUTORIZADAS) ---
             df_autorizadas = df_xs[df_xs['Situação Nota'].str.upper().str.contains('AUTORIZADA', na=False)]
             if not df_autorizadas.empty:
                 df_res_uf = df_autorizadas.groupby(['UF_DEST', 'IE_SUBST']).agg({
                     'VAL-ICMS-ST': 'sum', 'VAL-DIFAL': 'sum', 'VAL-FCP': 'sum', 'VAL-FCP-ST': 'sum'
                 }).reset_index()
-                df_res_uf.columns = ['ESTADO', 'IE SUBST.', 'ST', 'DIFAL', 'FCP', 'FCP-ST']
+                df_res_uf.columns = ['ESTADO', 'IE SUBST.', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
                 df_res_uf.to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False)
 
     return output.getvalue()
