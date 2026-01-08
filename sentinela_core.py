@@ -3,14 +3,14 @@ import io, zipfile, streamlit as st
 import xml.etree.ElementTree as ET
 import re
 
-# Importação dos módulos especialistas
+# Importação dos Especialistas (Garantindo que todos estão aqui)
 from audit_resumo import gerar_aba_resumo
 from audit_gerencial import gerar_abas_gerenciais
 from audit_icms import processar_icms
 from audit_ipi import processar_ipi
 from audit_pis_cofins import processar_pc
 from audit_difal import processar_difal
-from audit_resumo_uf import gerar_resumo_uf
+from audit_resumo_uf import gerar_resumo_uf # ESTA É A ABA QUE VOCÊ PRECISA
 
 def safe_float(v):
     if v is None or pd.isna(v) or str(v).strip().upper() in ['NT', '']: return 0.0
@@ -76,34 +76,34 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         
-        # Aba 1: RESUMO (Manual)
+        # 1. ABA RESUMO
         gerar_aba_resumo(writer)
         
-        # Abas 2 e 3: GERENCIAIS (Filtro de erro ativado aqui)
+        # 2 e 3. GERENCIAIS
         gerar_abas_gerenciais(writer, ge, gs)
 
         if not df_xs.empty:
+            # Autenticidade
             st_map = {}
             if as_f:
                 try:
                     as_f.seek(0)
-                    # Tratamento de erro também na Autenticidade
-                    if as_f.name.endswith('.xlsx'):
-                        df_auth = pd.read_excel(as_f, header=None)
-                    else:
-                        df_auth = pd.read_csv(as_f, header=None, sep=None, engine='python', on_bad_lines='skip')
-                    
+                    if as_f.name.endswith('.xlsx'): df_auth = pd.read_excel(as_f, header=None)
+                    else: df_auth = pd.read_csv(as_f, header=None, sep=None, engine='python', on_bad_lines='skip')
                     df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
                     st_map = df_auth.set_index(0)[5].to_dict()
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Especialistas
+            # Executando Auditorias (Abas 4, 5, 6, 7)
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer)
             processar_pc(df_xs, writer, cod_cliente)
             processar_difal(df_xs, writer)
-            gerar_resumo_uf(df_xs, writer)
+            
+            # --- EXECUÇÃO DA ABA 8 (DIFAL_ST_FECP) ---
+            # Forçamos a chamada aqui
+            gerar_resumo_uf(df_xs, writer) 
 
     return output.getvalue()
