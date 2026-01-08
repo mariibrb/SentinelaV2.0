@@ -56,21 +56,21 @@ st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 1
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
-    st.markdown("<div class='passo-container'><span class='passo-texto'>PASSO 2: Carregar Documentos (.zip para +4.000 XMLs)</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='passo-container'><span class='passo-texto'>PASSO 2: Carregar ZIP (Suporte a +4.000 XMLs)</span></div>", unsafe_allow_html=True)
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs Entrada", type=['xml', 'zip'], accept_multiple_files=True, key="xe_v_restored")
-        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_restored")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_restored")
+        xe = st.file_uploader("ZIP de Entradas", type=['zip'], key="xe_v_zip_fixed")
+        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_zip_fixed")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_zip_fixed")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs Saída", type=['xml', 'zip'], accept_multiple_files=True, key="xs_v_restored")
-        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_restored")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_restored")
+        xs = st.file_uploader("ZIP de Saídas", type=['zip'], key="xs_v_zip_fixed")
+        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_zip_fixed")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_zip_fixed")
 
     if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 Sentinela processando com Auditoria de ICMS e Autenticidade restauradas..."):
+        with st.spinner("🧡 Sentinela processando ZIP com as 8 abas completas..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
