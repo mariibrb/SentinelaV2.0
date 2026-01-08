@@ -23,7 +23,6 @@ st.markdown("""
         background-color: #FFFFFF; padding: 10px 15px; border-radius: 10px; border-left: 5px solid #FF6F00;
         margin: 10px auto 15px auto; max-width: 600px; text-align: center;
     }
-    .passo-texto { color: #FF6F00; font-size: 1.1rem; font-weight: 700; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -57,21 +56,21 @@ st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 1
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
-    st.markdown("<div class='passo-container'><span class='passo-texto'>PASSO 2: Carregar Arquivos (Dica: Use .ZIP para +4.000 XMLs)</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='passo-container'><span class='passo-texto'>PASSO 2: Carregar Documentos</span></div>", unsafe_allow_html=True)
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs Entrada (ou .zip)", type=['xml', 'zip'], accept_multiple_files=True, key="xe_final_v10")
-        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_final_v10")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_final_v10")
+        xe = st.file_uploader("XMLs Entrada (ou .zip)", type=['xml', 'zip'], accept_multiple_files=True, key="xe_v_tab")
+        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_tab")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_tab")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs Saída (ou .zip)", type=['xml', 'zip'], accept_multiple_files=True, key="xs_final_v10")
-        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_final_v10")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_final_v10")
+        xs = st.file_uploader("XMLs Saída (ou .zip)", type=['xml', 'zip'], accept_multiple_files=True, key="xs_v_tab")
+        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_tab")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_tab")
 
     if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 Sentinela auditando com todas as abas aprovadas..."):
+        with st.spinner("🧡 Sentinela consolidando tabelas por Estado..."):
             try:
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
