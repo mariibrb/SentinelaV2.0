@@ -93,16 +93,34 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # --- ABA RESUMO (MANUAL DE INSTRUÇÕES) ---
-        man = [["MANUAL DE DIAGNÓSTICOS"], [""], ["ICMS: ✅ OK / ❌ Divergência vs Gabarito ou Trava de 4% (Importados)"], ["DIFAL: Analisa obrigatoriedade para CPF/Isento"], ["IPI: Confronto com TIPI.csv"]]
+        # --- RESUMO MAXIMALISTA (MANUAL COMPLETO) ---
+        man = [
+            ["MANUAL DE DIAGNÓSTICOS SENTINELA"], [""],
+            ["[ICMS_AUDIT]"],
+            ["✅ Alq OK", "Alíquota XML bate com regra Gabarito ou Tabela UF."],
+            ["❌ XML % vs Gabarito %", "Divergência contra o cadastro personalizado do cliente."],
+            ["❌ XML % vs Interna UF %", "Divergência contra a alíquota padrão do estado de destino."],
+            ["❌ XML % vs Trava 4% %", "Mercadoria Importada (Origem 1,2,3,8) interestadual exige 4%."],
+            [""], ["[IPI_AUDIT]"],
+            ["✅ Alq OK", "Alíquota XML bate com o arquivo TIPI.csv."],
+            ["❌ XML % vs TIPI %", "Divergência contra a Tabela de Incidência do IPI."],
+            [""], ["[PIS_COFINS_AUDIT]"],
+            ["✅ CST OK", "CST de saída corresponde ao gabarito."],
+            ["❌ XML CST vs Base CST", "Divergência no Código de Situação Tributária federal."],
+            ["❌ NCM ausente na Base", "Produto não encontrado no cadastro de PIS/COFINS."],
+            [""], ["[DIFAL_AUDIT]"],
+            ["✅ DIFAL OK", "Imposto destacado para CPF ou Isento."],
+            ["❌ Erro: Não-Contribuinte sem DIFAL", "Operação interestadual sem destaque obrigatório para CPF/PF."],
+            ["Contribuinte: Verificar", "Destinatário com IE. Diferencial deve ser pago na entrada."]
+        ]
         pd.DataFrame(man).to_excel(writer, sheet_name='RESUMO', index=False, header=False)
         
-        # --- ABAS GERENCIAIS ---
         for f_obj, s_name in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
             if f_obj:
                 try:
                     f_obj.seek(0)
-                    (pd.read_excel(f_obj) if f_obj.name.endswith('.xlsx') else pd.read_csv(f_obj)).to_excel(writer, sheet_name=s_name, index=False)
+                    df_g = pd.read_excel(f_obj) if f_obj.name.endswith('.xlsx') else pd.read_csv(f_obj)
+                    df_g.to_excel(writer, sheet_name=s_name, index=False)
                 except: pass
 
         st_map = {}
@@ -116,7 +134,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
         if not df_xs.empty:
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # --- 1. ICMS AUDIT (TODOS OS CENÁRIOS) ---
+            # --- PADRÃO DE COLUNAS: TAGS -> STATUS -> ANÁLISES ---
+            cols_xml = list(df_xs.columns)
+            if 'Situação Nota' in cols_xml: cols_xml.remove('Situação Nota')
+
+            # 1. ICMS_AUDIT
             df_i = df_xs.copy()
             def audit_icms(r):
                 info = base_icms[base_icms['NCM_KEY'] == r['NCM']] if not base_icms.empty else pd.DataFrame()
@@ -127,22 +149,20 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
                 else: alq_e, tipo = (ALIQUOTAS_UF.get(r['UF_EMIT'], 18.0), "Interna UF")
                 diag = "✅ Alq OK" if abs(r['ALQ-ICMS'] - alq_e) < 0.01 else f"❌ XML {r['ALQ-ICMS']}% vs {tipo} {alq_e}%"
                 comp = max(0, (alq_e - r['ALQ-ICMS']) * r['BC-ICMS'] / 100)
-                return pd.Series([diag, f"R$ {comp:,.2f}", alq_e, tipo])
-            df_i[['Diagnóstico', 'Complemento', 'Esperado', 'Regra']] = df_i.apply(audit_icms, axis=1)
-            cols_i = ['Situação Nota', 'Diagnóstico', 'Complemento'] + [c for c in df_i.columns if c not in ['Situação Nota', 'Diagnóstico', 'Complemento']]
-            df_i[cols_i].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
+                return pd.Series([diag, f"R$ {comp:,.2f}"])
+            df_i[['Diagnóstico', 'Complemento']] = df_i.apply(audit_icms, axis=1)
+            df_i[cols_xml + ['Situação Nota', 'Diagnóstico', 'Complemento']].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # --- 2. IPI AUDIT ---
+            # 2. IPI_AUDIT
             df_ip = df_xs.copy()
             def audit_ipi(r):
                 match = tipi_df[tipi_df['NCM_KEY'] == r['NCM']] if not tipi_df.empty else pd.DataFrame()
                 val_p = safe_float(match['ALÍQUOTA (%)'].iloc[0]) if not match.empty else 0.0
                 return "✅ Alq OK" if abs(r['ALQ-IPI'] - val_p) < 0.01 else f"❌ XML {r['ALQ-IPI']}% vs TIPI {val_p}%"
             df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
-            cols_ip = ['Situação Nota', 'Diagnóstico IPI'] + [c for c in df_ip.columns if c not in ['Situação Nota', 'Diagnóstico IPI']]
-            df_ip[cols_ip].to_excel(writer, sheet_name='IPI_AUDIT', index=False)
+            df_ip[cols_xml + ['Situação Nota', 'Diagnóstico IPI']].to_excel(writer, sheet_name='IPI_AUDIT', index=False)
 
-            # --- 3. PIS/COFINS AUDIT ---
+            # 3. PIS_COFINS_AUDIT
             df_pc = df_xs.copy()
             def audit_pc(r):
                 info = base_pc[base_pc['NCM_KEY'] == r['NCM']] if not base_pc.empty else pd.DataFrame()
@@ -150,10 +170,9 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
                 cst_b = str(info['CST Saída'].iloc[0]).zfill(2)
                 return "✅ CST OK" if r['CST-PIS'] == cst_b else f"❌ XML {r['CST-PIS']} vs Base {cst_b}"
             df_pc['Diagnóstico P/C'] = df_pc.apply(audit_pc, axis=1)
-            cols_pc = ['Situação Nota', 'Diagnóstico P/C'] + [c for c in df_pc.columns if c not in ['Situação Nota', 'Diagnóstico P/C']]
-            df_pc[cols_pc].to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
+            df_pc[cols_xml + ['Situação Nota', 'Diagnóstico P/C']].to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
 
-            # --- 4. DIFAL AUDIT ---
+            # 4. DIFAL_AUDIT
             df_dif = df_xs.copy()
             def audit_difal(r):
                 if r['UF_EMIT'] != r['UF_DEST']:
@@ -162,10 +181,9 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
                     return "Contribuinte: Verificar"
                 return "Operação Interna"
             df_dif['Análise DIFAL'] = df_dif.apply(audit_difal, axis=1)
-            cols_dif = ['Situação Nota', 'Análise DIFAL'] + [c for c in df_dif.columns if c not in ['Situação Nota', 'Análise DIFAL']]
-            df_dif[cols_dif].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
+            df_dif[cols_xml + ['Situação Nota', 'Análise DIFAL']].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
-            # --- 5. DIFAL_ST_FECP (TABELA POR ESTADO) ---
+            # 5. DIFAL_ST_FECP (RESUMO POR ESTADO)
             df_res_uf = df_xs.groupby(['UF_DEST', 'IE_SUBST']).agg({'VAL-ICMS-ST': 'sum', 'VAL-DIFAL': 'sum', 'VAL-FCP': 'sum', 'VAL-FCP-ST': 'sum'}).reset_index()
             df_res_uf.columns = ['ESTADO', 'IE SUBST.', 'ST', 'DIFAL', 'FCP', 'FCP-ST']
             df_res_uf.to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False)
