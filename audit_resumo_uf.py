@@ -2,8 +2,8 @@ import pandas as pd
 
 def gerar_resumo_uf(df, writer):
     """
-    Gera a aba DIFAL_ST_FECP separando Entradas e Saídas.
-    Utiliza o CFOP para identificar o sentido da operação.
+    Gera a aba DIFAL_ST_FECP com tabelas de Saída e Entrada lado a lado,
+    alinhadas pela UF.
     """
     if df.empty:
         return
@@ -19,9 +19,7 @@ def gerar_resumo_uf(df, writer):
         pd.DataFrame([["Aviso:", "Nenhuma nota AUTORIZADA encontrada."]]).to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False, header=False)
         return
 
-    # 2. Identificação de Sentido (Entrada vs Saída) pelo CFOP
-    # CFOP iniciando em 1, 2 ou 3 = ENTRADA
-    # CFOP iniciando em 5, 6 ou 7 = SAÍDA
+    # 2. Identificação de Sentido pelo CFOP
     def identificar_sentido(cfop):
         c = str(cfop).strip()[0]
         if c in ['1', '2', '3']: return 'ENTRADA'
@@ -30,7 +28,7 @@ def gerar_resumo_uf(df, writer):
 
     df_aut['SENTIDO'] = df_aut['CFOP'].apply(identificar_sentido)
 
-    # 3. Função para agrupar e formatar
+    # 3. Função de Agrupamento
     def agrupar_dados(dataframe):
         return dataframe.groupby(['UF_DEST', 'IE_SUBST']).agg({
             'VAL-ICMS-ST': 'sum',
@@ -39,40 +37,31 @@ def gerar_resumo_uf(df, writer):
             'VAL-FCP-ST': 'sum'
         }).reset_index()
 
-    # Separa os dataframes
-    df_saidas = df_aut[df_aut['SENTIDO'] == 'SAÍDA']
-    df_entradas = df_aut[df_aut['SENTIDO'] == 'ENTRADA']
+    # 4. Preparação das Tabelas Lado a Lado
+    df_s = df_aut[df_aut['SENTIDO'] == 'SAÍDA']
+    df_e = df_aut[df_aut['SENTIDO'] == 'ENTRADA']
 
-    # 4. Gravação Física na Aba
-    start_row = 0
+    res_s = agrupar_dados(df_s) if not df_s.empty else pd.DataFrame(columns=['UF_DEST', 'IE_SUBST', 'VAL-ICMS-ST', 'VAL-DIFAL', 'VAL-FCP', 'VAL-FCP-ST'])
+    res_e = agrupar_dados(df_e) if not df_e.empty else pd.DataFrame(columns=['UF_DEST', 'IE_SUBST', 'VAL-ICMS-ST', 'VAL-DIFAL', 'VAL-FCP', 'VAL-FCP-ST'])
+
+    # Renomeando colunas para evitar colisão e alinhar no Excel
+    res_s.columns = ['ESTADO (UF)', 'IE SUBSTITUTO', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
+    res_e.columns = ['ESTADO (UF) ', 'IE SUBSTITUTO ', 'ST TOTAL ', 'DIFAL TOTAL ', 'FCP TOTAL ', 'FCP-ST TOTAL ']
+
+    # 5. Gravação manual para garantir o posicionamento exato (Lado a Lado)
     workbook = writer.book
     worksheet = workbook.add_worksheet('DIFAL_ST_FECP')
     writer.sheets['DIFAL_ST_FECP'] = worksheet
 
-    # Formatos
-    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#FF6F00', 'font_color': 'white', 'border': 1})
-    title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#FF6F00'})
+    # Formatação de Títulos (Laranja conforme imagem)
+    title_fmt = workbook.add_format({'bold': True, 'font_color': '#FF6F00', 'font_size': 12})
 
-    # --- TABELA DE SAÍDAS ---
-    worksheet.write(start_row, 0, "RESUMO DE SAÍDAS (VENDAS)", title_fmt)
-    start_row += 2
-    
-    if not df_saidas.empty:
-        res_s = agrupar_dados(df_saidas)
-        res_s.columns = ['ESTADO (UF)', 'IE SUBSTITUTO', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
-        res_s.to_excel(writer, sheet_name='DIFAL_ST_FECP', startrow=start_row, index=False)
-        start_row += len(res_s) + 4
-    else:
-        worksheet.write(start_row, 0, "Nenhuma saída encontrada.")
-        start_row += 3
+    # Escrevendo Títulos das Seções
+    worksheet.write(0, 0, "RESUMO DE SAÍDAS (VENDAS)", title_fmt)
+    worksheet.write(0, 8, "RESUMO DE ENTRADAS (DEVOLUÇÕES/COMPRAS)", title_fmt)
 
-    # --- TABELA DE ENTRADAS (DEVOLUÇÕES) ---
-    worksheet.write(start_row, 0, "RESUMO DE ENTRADAS (DEVOLUÇÕES/COMPRAS)", title_fmt)
-    start_row += 2
+    # Gravando tabela de Saídas (Inicia na Coluna A)
+    res_s.to_excel(writer, sheet_name='DIFAL_ST_FECP', startrow=2, startcol=0, index=False)
 
-    if not df_entradas.empty:
-        res_e = agrupar_dados(df_entradas)
-        res_e.columns = ['ESTADO (UF)', 'IE SUBSTITUTO', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
-        res_e.to_excel(writer, sheet_name='DIFAL_ST_FECP', startrow=start_row, index=False)
-    else:
-        worksheet.write(start_row, 0, "Nenhuma entrada encontrada.")
+    # Gravando tabela de Entradas (Inicia na Coluna I - deixando G e H vazias para respiro)
+    res_e.to_excel(writer, sheet_name='DIFAL_ST_FECP', startrow=2, startcol=8, index=False)
