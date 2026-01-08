@@ -23,11 +23,10 @@ st.markdown("""
         background-color: #FFFFFF; padding: 10px 15px; border-radius: 10px; border-left: 5px solid #FF6F00;
         margin: 10px auto 15px auto; max-width: 600px; text-align: center;
     }
-    .passo-texto { color: #FF6F00; font-size: 1.1rem; font-weight: 700; }
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=600) # Cache para evitar requisições repetidas que travam a aba
+@st.cache_data(ttl=600)
 def listar_empresas():
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
@@ -35,7 +34,7 @@ def listar_empresas():
     url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias"
     headers = {"Authorization": f"token {token}"}
     try:
-        res = requests.get(url, headers=headers, timeout=10)
+        res = requests.get(url, headers=headers, timeout=20)
         if res.status_code == 200:
             return sorted(list(set([f['name'].split('-')[0] for f in res.json() if f['name'].endswith('.xlsx') and 'TIPI' not in f['name'].upper()])))
     except: pass
@@ -57,23 +56,22 @@ st.markdown("<div class='passo-container'><span class='passo-texto'>👣 PASSO 1
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
-    st.markdown("<div class='passo-container'><span class='passo-texto'>PASSO 2: Carregar Arquivos</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='passo-container'><span class='passo-texto'>PASSO 2: Carregar Arquivos (Dica: Use .ZIP para muitos XMLs)</span></div>", unsafe_allow_html=True)
     c_e, c_s = st.columns(2, gap="large")
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("XMLs Entrada", type='xml', accept_multiple_files=True, key="xe_v_perf")
-        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_perf")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_perf")
+        xe = st.file_uploader("XMLs Entrada (ou .zip)", type=['xml', 'zip'], accept_multiple_files=True, key="xe_zip")
+        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_zip")
+        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_zip")
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("XMLs Saída", type='xml', accept_multiple_files=True, key="xs_v_perf")
-        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_perf")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_perf")
+        xs = st.file_uploader("XMLs Saída (ou .zip)", type=['xml', 'zip'], accept_multiple_files=True, key="xs_zip")
+        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_zip")
+        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_zip")
 
     if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 Sentinela auditando (Otimizando memória para evitar travamento)..."):
+        with st.spinner("🧡 Sentinela processando carga de arquivos..."):
             try:
-                # Otimização: Extração segmentada se houver muitos arquivos
                 df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
                 relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
                 st.success("Auditoria Concluída! 🧡")
