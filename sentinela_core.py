@@ -93,11 +93,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # 1. RESUMO (MANUAL)
-        man = [["MANUAL DE DIAGNÓSTICOS"], [""], ["DIFAL_ST_FECP: Consolidação de valores APENAS de notas Autorizadas."]]
-        pd.DataFrame(man).to_excel(writer, sheet_name='RESUMO', index=False, header=False)
+        # --- 1. RESUMO ---
+        manual = [["MANUAL SENTINELA"], [""], ["DIFAL_ST_FECP: Somatória autorizada por UF/IE."], ["GERENCIAIS: Espelhamento de dados ERP."]]
+        pd.DataFrame(manual).to_excel(writer, sheet_name='RESUMO', index=False, header=False)
         
-        # 2. GERENCIAIS
+        # --- 2 e 3. GERENCIAIS (RESTAURADAS) ---
         for f_obj, s_name in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
             if f_obj:
                 try:
@@ -116,9 +116,9 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
 
         if not df_xs.empty:
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
-            cols_xml = [c for c in df_xs.columns if c != 'Situação Nota']
+            cols_xml = list(df_xs.columns); cols_xml.remove('Situação Nota')
 
-            # --- AUDITORIAS INDIVIDUAIS ---
+            # --- 4 a 7. AUDITORIAS INDIVIDUAIS ---
             # ICMS
             df_i = df_xs.copy()
             def audit_icms(r):
@@ -152,24 +152,24 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
             df_pc['Diagnóstico P/C'] = df_pc.apply(audit_pc, axis=1)
             df_pc[cols_xml + ['Situação Nota', 'Diagnóstico P/C']].to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
 
-            # DIFAL
+            # DIFAL AUDIT
             df_dif = df_xs.copy()
             def audit_difal(r):
                 if r['UF_EMIT'] != r['UF_DEST']:
                     v = r['VAL-DIFAL'] + r['VAL-FCP-DEST']
-                    if (r['CPF_DEST'] and len(str(r['CPF_DEST'])) > 5) or r['indIEDest'] in ['9', '']: return "✅ DIFAL OK" if v > 0 else "❌ Erro: Não-Contribuinte sem DIFAL"
-                    return "Contribuinte: Verificar"
-                return "Operação Interna"
-            df_dif['Análise DIFAL'] = df_dif.apply(audit_difal, axis=1)
-            df_dif[cols_xml + ['Situação Nota', 'Análise DIFAL']].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
+                    if (r['CPF_DEST'] and len(str(r['CPF_DEST'])) > 5) or r['indIEDest'] in ['9', '']: return "✅ DIFAL OK" if v > 0 else "❌ Erro: S/DIFAL"
+                    return "Contribuinte"
+                return "Interna"
+            df_dif['Analise DIFAL'] = df_dif.apply(audit_difal, axis=1)
+            df_dif[cols_xml + ['Situação Nota', 'Analise DIFAL']].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
 
-            # --- ABA DIFAL_ST_FECP (CONSOLIDADA POR ESTADO - FILTRO DE AUTORIZADAS) ---
-            df_autorizadas = df_xs[df_xs['Situação Nota'].str.upper().str.contains('AUTORIZADA', na=False)]
-            if not df_autorizadas.empty:
-                df_res_uf = df_autorizadas.groupby(['UF_DEST', 'IE_SUBST']).agg({
+            # --- 8. DIFAL_ST_FECP (RESTABELECIDA - SOMATÓRIA POR UF/IE SEM CANCELADAS) ---
+            df_aut = df_xs[df_xs['Situação Nota'].str.upper().str.contains('AUTORIZADA', na=False)]
+            if not df_aut.empty:
+                df_res_uf = df_aut.groupby(['UF_DEST', 'IE_SUBST']).agg({
                     'VAL-ICMS-ST': 'sum', 'VAL-DIFAL': 'sum', 'VAL-FCP': 'sum', 'VAL-FCP-ST': 'sum'
                 }).reset_index()
-                df_res_uf.columns = ['ESTADO', 'IE SUBST.', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
+                df_res_uf.columns = ['UF', 'IE SUBST.', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
                 df_res_uf.to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False)
 
     return output.getvalue()
