@@ -3,7 +3,7 @@ import io, zipfile, streamlit as st
 import xml.etree.ElementTree as ET
 import re
 
-# Importação dos Especialistas
+# Importação dos módulos especialistas
 from audit_resumo import gerar_aba_resumo
 from audit_gerencial import gerar_abas_gerenciais
 from audit_icms import processar_icms
@@ -76,28 +76,34 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         
-        # 1. ABA RESUMO (Manual)
+        # Aba 1: RESUMO (Manual)
         gerar_aba_resumo(writer)
         
-        # 2 e 3. GERENCIAIS
+        # Abas 2 e 3: GERENCIAIS (Filtro de erro ativado aqui)
         gerar_abas_gerenciais(writer, ge, gs)
 
         if not df_xs.empty:
-            # Cruzamento Autenticidade
             st_map = {}
             if as_f:
-                as_f.seek(0)
-                df_auth = pd.read_excel(as_f, header=None) if as_f.name.endswith('.xlsx') else pd.read_csv(as_f, header=None)
-                df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
-                st_map = df_auth.set_index(0)[5].to_dict()
+                try:
+                    as_f.seek(0)
+                    # Tratamento de erro também na Autenticidade
+                    if as_f.name.endswith('.xlsx'):
+                        df_auth = pd.read_excel(as_f, header=None)
+                    else:
+                        df_auth = pd.read_csv(as_f, header=None, sep=None, engine='python', on_bad_lines='skip')
+                    
+                    df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
+                    st_map = df_auth.set_index(0)[5].to_dict()
+                except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chamada dos Especialistas
-            processar_icms(df_xs, writer, cod_cliente)     # Aba 4
-            processar_ipi(df_xs, writer)                   # Aba 5
-            processar_pc(df_xs, writer, cod_cliente)       # Aba 6
-            processar_difal(df_xs, writer)                 # Aba 7
-            gerar_resumo_uf(df_xs, writer)                 # Aba 8
+            # Especialistas
+            processar_icms(df_xs, writer, cod_cliente)
+            processar_ipi(df_xs, writer)
+            processar_pc(df_xs, writer, cod_cliente)
+            processar_difal(df_xs, writer)
+            gerar_resumo_uf(df_xs, writer)
 
     return output.getvalue()
