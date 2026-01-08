@@ -28,8 +28,6 @@ def buscar_github(nome_arquivo):
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
-            if isinstance(res.json(), list): # Se for pasta, não baixa
-                return None
             f_res = requests.get(res.json()['download_url'], headers=headers)
             return io.BytesIO(f_res.content)
     except: pass
@@ -52,8 +50,10 @@ def extrair_dados_xml(files):
                     tag_limpa = elem.tag.split('}')[-1]
                     if tag_limpa in tags_alvo: return elem.text
                 return ""
+            
             inf = root.find('.//infNFe'); emit = root.find('.//emit'); dest = root.find('.//dest')
             chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
+            
             for det in root.findall('.//det'):
                 prod = det.find('prod'); imp = det.find('imposto')
                 icms_node = imp.find('.//ICMS') if imp is not None else None
@@ -66,19 +66,24 @@ def extrair_dados_xml(files):
                     "VPROD": safe_float(buscar_tag('vProd', prod)), "ORIGEM": buscar_recursivo(icms_node, ['orig']),
                     "CST-ICMS": buscar_recursivo(icms_node, ['CST', 'CSOSN']).zfill(2),
                     "BC-ICMS": safe_float(buscar_recursivo(imp, ['vBC'])), "ALQ-ICMS": safe_float(buscar_recursivo(imp, ['pICMS'])),
-                    "VLR-ICMS": safe_float(buscar_recursivo(imp, ['vICMS'])), "VLR-ICMS-ST": safe_float(buscar_recursivo(imp, ['vICMSST'])),
-                    "CST-PIS": buscar_recursivo(imp.find('.//PIS'), ['CST']), "VAL-PIS": safe_float(buscar_recursivo(imp.find('.//PIS'), ['vPIS'])),
-                    "CST-COF": buscar_recursivo(imp.find('.//COFINS'), ['CST']), "VAL-COF": safe_float(buscar_recursivo(imp.find('.//COFINS'), ['vCOFINS'])),
-                    "CST-IPI": buscar_recursivo(imp.find('.//IPI'), ['CST']), "ALQ-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['pIPI'])),
+                    "VLR-ICMS": safe_float(buscar_recursivo(imp, ['vICMS'])),
+                    "VAL-PIS": safe_float(buscar_recursivo(imp.find('.//PIS'), ['vPIS'])),
+                    "VAL-COF": safe_float(buscar_recursivo(imp.find('.//COFINS'), ['vCOFINS'])),
                     "VAL-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['vIPI'])),
-                    "VAL-DIFAL": safe_float(buscar_recursivo(imp, ['vICMSUFDest'])), "VAL-FCP-DEST": safe_float(buscar_recursivo(imp, ['vFCPUFDest']))
+                    "ALQ-IPI": safe_float(buscar_recursivo(imp.find('.//IPI'), ['pIPI'])),
+                    "VAL-DIFAL": safe_float(buscar_recursivo(imp, ['vICMSUFDest'])),
+                    "VAL-FCP-DEST": safe_float(buscar_recursivo(imp, ['vFCPUFDest'])),
+                    # 👣 LEITURA DAS NOVAS TAGS IBS/CBS
+                    "VAL-IBS": safe_float(buscar_recursivo(imp, ['vIBS'])),
+                    "ALQ-IBS": safe_float(buscar_recursivo(imp, ['pIBS'])),
+                    "VAL-CBS": safe_float(buscar_recursivo(imp, ['vCBS'])),
+                    "ALQ-CBS": safe_float(buscar_recursivo(imp, ['pCBS']))
                 }
                 dados_lista.append(linha)
         except: continue
     return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
-    # Carregamento: Empresa (ICMS/PC) + Auditoria IPI (Arquivo nomeado TIPI)
     f_cliente = buscar_github(f"{cod_cliente}-Bases_Tributárias.xlsx")
     f_tipi = buscar_github("TIPI.csv")
     
@@ -96,16 +101,16 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         pd.DataFrame([["AUDITORIA FISCAL SENTINELA"]]).to_excel(writer, sheet_name='MANUAL', index=False, header=False)
         
-        # 👣 GERENCIAIS COMO ABAS
-        for f_obj, s_name in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
-            if f_obj:
+        # 👣 ABAS GERENCIAIS
+        for f, s in [(ge, 'GERENCIAL_ENTRADA'), (gs, 'GERENCIAL_SAIDA')]:
+            if f:
                 try:
-                    f_obj.seek(0)
-                    df_g = pd.read_excel(f_obj) if f_obj.name.endswith('.xlsx') else pd.read_csv(f_obj)
-                    df_g.to_excel(writer, sheet_name=s_name, index=False)
+                    f.seek(0)
+                    df_g = pd.read_excel(f) if f.name.endswith('.xlsx') else pd.read_csv(f)
+                    df_g.to_excel(writer, sheet_name=s, index=False)
                 except: pass
 
-        # Map de Status
+        # Map de Status Autenticidade
         st_map = {}
         if as_f:
             try:
@@ -118,7 +123,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
         if not df_xs.empty:
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # --- 1. ICMS ---
+            # --- 1. ICMS AUDIT (Incluindo IBS/CBS) ---
             df_i = df_xs.copy()
             def audit_icms(r):
                 info = base_icms[base_icms['NCM_KEY'] == r['NCM']] if not base_icms.empty else pd.DataFrame()
@@ -131,32 +136,49 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente):
                 diag = "✅ Alq OK" if abs(r['ALQ-ICMS'] - alq_e) < 0.01 else f"❌ XML {r['ALQ-ICMS']}% vs {alq_e}%"
                 comp = max(0, (alq_e - r['ALQ-ICMS']) * r['BC-ICMS'] / 100)
                 return pd.Series([diag, f"R$ {comp:,.2f}"])
+            
             df_i[['Diagnóstico', 'Complemento']] = df_i.apply(audit_icms, axis=1)
-            cols = ['Situação Nota'] + [c for c in df_i.columns if c != 'Situação Nota']
-            df_i[cols].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
+            # 👣 ORDENAÇÃO: Status + IBS/CBS + Restante
+            cols_i = ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS', 'Diagnóstico', 'Complemento']
+            cols_i += [c for c in df_i.columns if c not in cols_i]
+            df_i[cols_i].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
 
-            # --- 2. IPI (TIPI) ---
+            # --- 2. IPI AUDIT (Incluindo IBS/CBS) ---
             df_ip = df_xs.copy()
             def audit_ipi(r):
                 match = tipi_df[tipi_df['NCM_KEY'] == r['NCM']] if not tipi_df.empty else pd.DataFrame()
                 val_p = safe_float(match['ALÍQUOTA (%)'].iloc[0]) if not match.empty else 0.0
                 diag = "✅ Alq OK" if abs(r['ALQ-IPI'] - val_p) < 0.01 else f"❌ XML {r['ALQ-IPI']}% vs TIPI {val_p}%"
-                return pd.Series([diag, val_p])
-            df_ip[['Diagnóstico IPI', 'Alíquota TIPI']] = df_ip.apply(audit_ipi, axis=1)
-            cols_ip = ['Situação Nota'] + [c for c in df_ip.columns if c != 'Situação Nota']
+                return diag
+            df_ip['Diagnóstico IPI'] = df_ip.apply(audit_ipi, axis=1)
+            cols_ip = ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS', 'Diagnóstico IPI']
+            cols_ip += [c for c in df_ip.columns if c not in cols_ip]
             df_ip[cols_ip].to_excel(writer, sheet_name='IPI_AUDIT', index=False)
 
-            # --- 3. DIFAL ---
+            # --- 3. DIFAL AUDIT (Incluindo IBS/CBS) ---
             df_dif = df_xs.copy()
             def audit_difal(r):
                 if r['UF_EMIT'] != r['UF_DEST']:
                     v = r['VAL-DIFAL'] + r['VAL-FCP-DEST']
                     if (r['CPF_DEST'] and len(str(r['CPF_DEST'])) > 5) or r['indIEDest'] == '9':
-                        return "✅ DIFAL OK" if v > 0 else "⚠️ Alerta: Sem DIFAL destacado"
+                        return "✅ DIFAL OK" if v > 0 else "⚠️ Alerta: Sem DIFAL"
                     return "Contribuinte: Verificar"
                 return "Operação Interna"
             df_dif['Análise DIFAL'] = df_dif.apply(audit_difal, axis=1)
-            cols_d = ['Situação Nota'] + [c for c in df_dif.columns if c != 'Situação Nota']
+            cols_d = ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS', 'Análise DIFAL']
+            cols_d += [c for c in df_dif.columns if c not in cols_d]
             df_dif[cols_d].to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
+
+            # --- 4. PIS/COFINS AUDIT (Incluindo IBS/CBS) ---
+            df_pc = df_xs.copy()
+            def audit_pc(r):
+                info = base_pc[base_pc['NCM_KEY'] == r['NCM']] if not base_pc.empty else pd.DataFrame()
+                if info.empty: return "❌ NCM ausente na Base"
+                cst_b = str(info['CST Saída'].iloc[0]).zfill(2)
+                return "✅ CST OK" if r['CST-PIS'] == cst_b else f"❌ XML {r['CST-PIS']} vs Base {cst_b}"
+            df_pc['Check PIS/COF'] = df_pc.apply(audit_pc, axis=1)
+            cols_pc = ['Situação Nota', 'VAL-IBS', 'ALQ-IBS', 'VAL-CBS', 'ALQ-CBS', 'Check PIS/COF']
+            cols_pc += [c for c in df_pc.columns if c not in cols_pc]
+            df_pc[cols_pc].to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
 
     return output.getvalue()
