@@ -2,14 +2,28 @@ import pandas as pd
 
 def gerar_resumo_uf(df, writer):
     """
-    Gera a aba DIFAL_ST_FECP com somatória por UF e IE Substituto.
-    Ignora notas canceladas ou não encontradas.
+    Gera a aba DIFAL_ST_FECP filtrando pela coluna de situação da autenticidade.
     """
-    # Filtro rigoroso: Apenas Notas Autorizadas
-    df_aut = df[df['Situação Nota'].str.upper().str.contains('AUTORIZADA', na=False)].copy()
+    # Se o DataFrame estiver vazio, cancela
+    if df.empty:
+        return
+
+    # Criamos uma cópia para não estragar os dados das outras abas
+    df_temp = df.copy()
+
+    # Ajuste da Situação: 
+    # O motor busca na coluna 'Situação Nota' que foi preenchida no Maestro 
+    # cruzando a chave com a sua planilha de Autenticidade.
+    
+    # Vamos tornar o filtro mais flexível: ele aceita "Autorizada", "Autorizado", "AUTORIZADA"
+    # e ignora "Cancelada", "Inutilizada" ou "Substituída".
+    
+    df_aut = df_temp[
+        df_temp['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)
+    ].copy()
     
     if not df_aut.empty:
-        # Agrupamento por Estado e Inscrição Estadual de Substituto
+        # Agrupamento por Estado e IE de Substituto
         res = df_aut.groupby(['UF_DEST', 'IE_SUBST']).agg({
             'VAL-ICMS-ST': 'sum',
             'VAL-DIFAL': 'sum',
@@ -17,11 +31,18 @@ def gerar_resumo_uf(df, writer):
             'VAL-FCP-ST': 'sum'
         }).reset_index()
         
-        # Renomeando colunas para o padrão aprovado
+        # Renomeando para o seu padrão de conferência
         res.columns = ['ESTADO (UF)', 'IE SUBSTITUTO', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
         
-        # Grava no Excel
+        # Grava a aba solicitada
         res.to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False)
     else:
-        # Se não houver notas autorizadas, cria a aba com aviso para não quebrar o Excel
-        pd.DataFrame([["Aviso:", "Nenhuma nota AUTORIZADA encontrada para somatória."]]).to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False, header=False)
+        # Se ele cair aqui, significa que o texto na sua planilha de autenticidade 
+        # não contém a palavra "AUTORIZADA". 
+        # Vou listar os status encontrados para você ver o que o Python está lendo:
+        status_encontrados = df_temp['Situação Nota'].unique().tolist()
+        pd.DataFrame({
+            "Aviso": ["Nenhuma nota autorizada encontrada"],
+            "Status lidos na sua planilha": [str(status_encontrados)],
+            "Dica": ["Verifique se na planilha de Autenticidade o status está escrito como 'Autorizada'"]
+        }).to_excel(writer, sheet_name='DIFAL_ST_FECP', index=False)
