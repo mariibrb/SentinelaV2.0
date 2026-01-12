@@ -44,23 +44,20 @@ def processar_icms(df, writer, cod_cliente):
             if 'ALQ_INTER' in base_gabarito.columns and uf_orig != uf_dest: alq_esp = float(g['ALQ_INTER'])
 
         # --- CÁLCULO DO VALOR COMPLEMENTAR ---
-        # Calcula o imposto real devido sobre a base do XML
+        # Refaz a conta do que deveria ter sido pago
         vlr_icms_devido = round(bc_icms_xml * (alq_esp / 100), 2)
-        vlr_complementar = max(0.0, round(vlr_icms_devido - vlr_icms_xml, 2))
+        vlr_complementar = round(vlr_icms_devido - vlr_icms_xml, 2)
+        
+        # Só mostra valor positivo (se for negativo, o cliente pagou a maior)
+        vlr_comp_final = vlr_complementar if vlr_complementar > 0.01 else 0.0
 
         # --- DIAGNÓSTICOS CONDICIONAIS ---
         
         # 1. Alíquota
-        if abs(alq_xml - alq_esp) < 0.01:
-            diag_alq = "✅ OK"
-        else:
-            diag_alq = f"❌ Erro (XML: {alq_xml}% | Esp: {alq_esp}%)"
+        diag_alq = "✅ OK" if abs(alq_xml - alq_esp) < 0.01 else f"❌ Erro (XML: {alq_xml}% | Esp: {alq_esp}%)"
 
         # 2. CST
-        if cst_xml == cst_esp:
-            diag_cst = "✅ OK"
-        else:
-            diag_cst = f"❌ Divergente (XML: {cst_xml} | Esp: {cst_esp})"
+        diag_cst = "✅ OK" if cst_xml == cst_esp else f"❌ Divergente (XML: {cst_xml} | Esp: {cst_esp})"
 
         # 3. Status Destaque
         status_destaque = "✅ OK"
@@ -81,9 +78,9 @@ def processar_icms(df, writer, cod_cliente):
         acao = "Nenhuma"
         motivo = "Imposto em conformidade."
 
-        if vlr_complementar > 0:
+        if vlr_comp_final > 0:
             acao = "Emitir NF Complementar"
-            motivo = f"Faltou destacar R$ {vlr_complementar} de ICMS."
+            motivo = f"Faltou destacar R$ {vlr_comp_final} de ICMS."
         elif alq_xml > alq_esp:
             acao = "Procedimento de Estorno"
             motivo = "Alíquota aplicada maior que o previsto."
@@ -92,21 +89,27 @@ def processar_icms(df, writer, cod_cliente):
             motivo = "Correção de CST sem alteração de valores."
 
         return pd.Series([
-            status_destaque, diag_alq, diag_cst, 
-            status_base, diag_st, vlr_complementar, acao, motivo
+            status_destaque, diag_alq, vlr_comp_final, diag_cst, 
+            status_base, diag_st, acao, motivo
         ])
 
-    # Colunas de Análise pós AG
+    # Colunas de Análise (Definição da Ordem)
     analises = [
-        'ICMS_STATUS_DESTAQUE', 'ICMS_DIAG_ALQUOTA', 
-        'ICMS_DIAG_CST', 'ICMS_STATUS_BASE',
-        'ICMS_DIAG_ST', 'VALOR_NF_COMPLEMENTAR', 'AÇÃO_CORRETIVA', 'FUNDAMENTAÇÃO'
+        'ICMS_STATUS_DESTAQUE', 
+        'ICMS_DIAG_ALQUOTA', 
+        'VALOR_NF_COMPLEMENTAR', # Coluna solicitada posicionada estrategicamente
+        'ICMS_DIAG_CST', 
+        'ICMS_STATUS_BASE',
+        'ICMS_DIAG_ST', 
+        'AÇÃO_CORRETIVA', 
+        'FUNDAMENTAÇÃO'
     ]
     
     df_i[analises] = df_i.apply(audit_icms_completa, axis=1)
 
-    # Organização das Colunas: Originais até AG (Situação Nota) + Analises
+    # Reorganização Final das Colunas
     cols_xml = [c for c in df_i.columns if c not in analises and c != 'Situação Nota']
     df_final = df_i[cols_xml + ['Situação Nota'] + analises]
 
+    # Gravação no Excel
     df_final.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
