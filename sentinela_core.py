@@ -48,10 +48,10 @@ def processar_conteudo_xml(content, dados_lista):
                     return elemento.text if elemento.text else ""
             return ""
 
-        iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
         inf = root.find('.//infNFe')
         if inf is None: return 
         
+        iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
         emit = root.find('.//emit')
         dest = root.find('.//dest')
         chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
@@ -114,33 +114,37 @@ def extrair_dados_xml(files):
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     
-    # Cabeçalhos exatos conforme sua solicitação
+    # Listas de Colunas fornecidas pelo usuário
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
-    def ler_dominio_limpo(arquivos, colunas_alvo):
+    def ler_csv_dominio_correto(arquivos, colunas_alvo):
         if arquivos is None: return pd.DataFrame()
         lista = arquivos if isinstance(arquivos, list) else [arquivos]
         dfs = []
         for f in lista:
             f.seek(0)
-            # Lemos forçando separador para evitar o "formato estranho"
-            # header=None para ignorar cabeçalhos originais e names para aplicar os seus
-            df = pd.read_csv(f, sep=None, engine='python', encoding='latin1', on_bad_lines='skip', header=None, names=colunas_alvo, dtype=str)
-            # Limpa espaços em branco que o sistema da domínio costuma exportar
+            df = pd.read_csv(f, sep=None, engine='python', encoding='latin1', on_bad_lines='skip', header=None, dtype=str, skip_blank_lines=True)
+            reais = len(df.columns)
+            esperadas = len(colunas_alvo)
+            if reais > esperadas:
+                df = df.iloc[:, :esperadas]
+                df.columns = colunas_alvo
+            else:
+                nomes_ajustados = colunas_alvo[:reais] + [f"EXTRA_{i}" for i in range(esperadas - reais)]
+                df.columns = nomes_ajustados[:reais]
             df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
             dfs.append(df)
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # Core alimenta os gerenciais com as colunas corretas
-    df_ger_ent = ler_dominio_limpo(ge, cols_ent)
-    df_ger_sai = ler_dominio_limpo(gs, cols_sai)
+    df_ger_ent = ler_csv_dominio_correto(ge, cols_ent)
+    df_ger_sai = ler_csv_dominio_correto(gs, cols_sai)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Criação das abas com a réplica exata e cabeçalhos solicitados
+        # Core alimenta as abas Gerenciais
         if not df_ger_ent.empty:
             df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         if not df_ger_sai.empty:
@@ -148,6 +152,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
 
         if is_ret:
             try:
+                # Chama o motor RET que agora gera abas em branco
                 executar_motor_ret(writer, df_xs, df_xe, df_ger_ent, df_ger_sai, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
