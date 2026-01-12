@@ -16,6 +16,8 @@ try:
     from audit_pis_cofins import processar_pc
     from audit_difal import processar_difal
     from apuracao_difal import gerar_resumo_uf
+    # Importação do Motor de Minas Gerais
+    from RET.motor_ret import executar_motor_ret
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
 
@@ -41,16 +43,13 @@ def processar_conteudo_xml(content, dados_lista):
         root = ET.fromstring(xml_str)
         
         def buscar_tag_recursiva(tag_alvo, no):
-            """Busca o VALOR de qualquer tag (como IEST) em qualquer lugar do nó."""
             if no is None: return ""
             for elemento in no.iter():
                 if elemento.tag.split('}')[-1] == tag_alvo:
                     return elemento.text if elemento.text else ""
             return ""
 
-        # CAPTURA DINÂMICA DA IEST (Lê o que estiver na tag, não importa o número)
         iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
-
         inf = root.find('.//infNFe')
         if inf is None: return 
         
@@ -63,11 +62,9 @@ def processar_conteudo_xml(content, dados_lista):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            # Captura DIFAL e FCP Destino
             v_difal_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
             v_fcp_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
             
-            # Prioridade IEST: Se o item tiver uma, usa a do item, senão usa a do cabeçalho
             iest_item = buscar_tag_recursiva('IEST', det.find('.//ICMS'))
             ie_final = iest_item if iest_item != "" else iest_no_xml
 
@@ -83,17 +80,13 @@ def processar_conteudo_xml(content, dados_lista):
                 "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
                 "ORIGEM": buscar_tag_recursiva('orig', det.find('.//ICMS')),
                 "CST-ICMS": buscar_tag_recursiva('CST', det.find('.//ICMS')) or buscar_tag_recursiva('CSOSN', det.find('.//ICMS')),
-                
                 "VAL-DIFAL": v_difal_dest + v_fcp_dest,
                 "VAL-FCP-DEST": v_fcp_dest,
                 "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', imp)),
                 "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', imp)),
                 "VAL-FCP-ST": safe_float(buscar_tag_recursiva('vFCPST', imp)),
                 "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
-                
-                # COLUNA B: Recebe dinamicamente a IE encontrada
                 "IE_SUBST": str(ie_final).strip(),
-                
                 "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
                 "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp))
             }
@@ -101,26 +94,46 @@ def processar_conteudo_xml(content, dados_lista):
     except: pass
 
 def extrair_dados_xml(files):
+    """Lê uma lista de arquivos que pode conter ZIPs ou XMLs avulsos"""
     dados_lista = []
     if not files: return pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
+    
     for f in lista_trabalho:
         try:
-            with zipfile.ZipFile(f) as z:
-                for filename in z.namelist():
-                    if filename.lower().endswith('.xml'):
-                        with z.open(filename) as xml_file: processar_conteudo_xml(xml_file.read(), dados_lista)
+            # Se for XML avulso
+            if f.name.lower().endswith('.xml'):
+                f.seek(0)
+                processar_conteudo_xml(f.read(), dados_lista)
+            # Se for ZIP
+            elif f.name.lower().endswith('.zip'):
+                f.seek(0)
+                with zipfile.ZipFile(f) as z:
+                    for filename in z.namelist():
+                        if filename.lower().endswith('.xml'):
+                            with z.open(filename) as xml_file:
+                                processar_conteudo_xml(xml_file.read(), dados_lista)
         except: continue
     return pd.DataFrame(dados_lista)
 
-def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
+def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
+    """Função principal com suporte a 9 argumentos e Módulo RET"""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         try: gerar_aba_resumo(writer)
         except: pass
+        
         try: gerar_abas_gerenciais(writer, ge, gs)
         except: pass
         
+        # MÓDULO MINAS GERAIS (RET)
+        if is_ret:
+            try:
+                # Chama o motor_ret.py para criar as abas MAPA_RET e ENTRADAS_AC
+                executar_motor_ret(writer, df_xs, df_xe, ge, gs, cod_cliente)
+            except Exception as e:
+                st.error(f"Erro no Motor RET: {e}")
+
         if not df_xs.empty:
             st_map = {}
             if as_f:
@@ -134,13 +147,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Auditorias
+            # Auditorias Padrão
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
-            
-            # Apuração UF (Passando df_xe mesmo se vazio)
             gerar_resumo_uf(df_xs, writer, df_xe) 
             
     return output.getvalue()
