@@ -4,9 +4,10 @@ import requests
 import io
 
 def carregar_regras_ret(cod_cliente):
-    """Busca o arquivo COD-RET_MG.xlsx no GitHub na pasta Bases_Tributárias"""
+    """Busca o arquivo COD-RET_MG.xlsx no GitHub"""
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
+    # Tenta buscar tanto .xlsx quanto .xls para garantir
     url = f"https://raw.githubusercontent.com/{repo}/main/Bases_Tributárias/{cod_cliente}-RET_MG.xlsx"
     headers = {"Authorization": f"token {token}"}
     
@@ -18,90 +19,88 @@ def carregar_regras_ret(cod_cliente):
     except:
         return None
 
+def mapear_colunas(df):
+    """Mapeia nomes de colunas variados para o padrão do motor"""
+    dicionario_colunas = {
+        'vlr_cont': ['Vlr Contábil', 'Valor Contábil', 'VLR_CONT', 'vlr_cont', 'Valor Total', 'Vlr. Contábil'],
+        'vlr_icms': ['Vlr ICMS', 'Valor ICMS', 'VLR_ICMS', 'vlr_icms', 'Vlr. ICMS'],
+        'base_icms': ['Base ICMS', 'BC ICMS', 'BASE_ICMS', 'base_icms', 'Base Calc. ICMS'],
+        'codi_acu': ['Acumulador', 'Cod. Acu.', 'CODI_ACU', 'codi_acu', 'Código Acumulador'],
+        'nome_acu': ['Descrição Acumulador', 'NOME_ACU', 'nome_acu', 'Nome Acumulador', 'Descrição']
+    }
+    
+    mapeamento_final = {}
+    for padrao, variacoes in dicionario_colunas.items():
+        for var in variacoes:
+            if var in df.columns:
+                mapeamento_final[var] = padrao
+                break
+    return df.rename(columns=mapeamento_final)
+
 def gerar_aba_entradas_ac(writer, ge, regras_tes):
-    """
-    Processa o Gerencial de Entradas, agrupa por AC e aplica as regras de estorno.
-    Mantém o layout de colunas C até K somadas.
-    """
+    """Processa o Gerencial de Entradas e aplica regras de estorno"""
     if ge is None or regras_tes is None:
         return
 
-    # 1. Carregar o Gerencial de Entrada (suporta Excel ou CSV)
     try:
+        # Carregamento flexível
         if isinstance(ge, pd.DataFrame):
             df_ge = ge.copy()
         else:
-            df_ge = pd.read_excel(ge) if ge.name.endswith('.xlsx') else pd.read_csv(ge, sep=None, engine='python')
-    except:
-        return
-
-    # 2. Mapeamento das regras de estorno (do arquivo RET no GitHub)
-    mapa_regras = dict(zip(regras_tes['ACUMULADOR'].astype(str).str.strip(), regras_tes['REGRA_ESTORNO']))
-
-    # 3. AGRUPAMENTO (A "Tabela Dinâmica" solicitada)
-    # Somamos os valores das colunas numéricas (C a J do seu modelo)
-    # Utilizamos os nomes técnicos comuns do gerencial de entradas
-    resumo = df_ge.groupby(['codi_acu', 'nome_acu']).agg({
-        'vlr_cont': 'sum',    # Coluna C
-        'base_icms': 'sum',   # Coluna D
-        'vlr_icms': 'sum',    # Coluna E
-        'vlr_ipi': 'sum',     # Coluna H
-        'bc_st': 'sum',       # Coluna I
-        'vlr_st': 'sum'       # Coluna J
-    }).reset_index()
-
-    # 4. Ajuste de Layout e Nomes de Coluna para o seu padrão
-    resumo.columns = ['Código', 'Descrição', 'Vlr Contábil', 'Base ICMS', 'Vlr ICMS', 'Vlr IPI', 'BC ICMS ST', 'Vlr ICMS ST']
-    
-    # Inserindo colunas vazias para manter as letras F e G na ordem correta
-    resumo.insert(5, 'Isentas ICMS', 0)
-    resumo.insert(6, 'Outras ICMS', 0)
-
-    # 5. Cálculo da Coluna K (Estorno) e L (Observação detalhada)
-    def aplicar_regra(linha):
-        ac_str = str(linha['Código']).strip()
-        regra = mapa_regras.get(ac_str, 'NÃO MAPEADO')
-        vlr_icms_puro = linha['Vlr ICMS']
+            df_ge = pd.read_excel(ge) if ge.name.endswith(('.xlsx', '.xls')) else pd.read_csv(ge, sep=None, engine='python')
         
-        if regra == 'ESTORNA TUDO':
-            estorno = vlr_icms_puro
-            obs = f"Cálculo: 100% do ICMS estornado. Valor extraído do AC {ac_str} via regra '{regra}' (GitHub)."
-        elif regra == 'SEM FORMULA':
-            estorno = 0
-            obs = f"Acumulador {ac_str} identificado, mas configurado como 'SEM FORMULA' no GitHub."
-        else:
-            estorno = 0
-            obs = f"Aviso: Acumulador {ac_str} não encontrado na planilha de regras {st.session_state.get('cod_cliente')}-RET_MG.xlsx."
-            
-        return pd.Series([estorno, obs])
+        # Padroniza as colunas do gerencial
+        df_ge = mapear_colunas(df_ge)
+        
+        # Garante que as colunas numéricas sejam números
+        cols_numericas = ['vlr_cont', 'base_icms', 'vlr_icms']
+        for col in cols_numericas:
+            if col in df_ge.columns:
+                df_ge[col] = pd.to_numeric(df_ge[col], errors='coerce').fillna(0)
 
-    # Criamos as colunas de resultado final
-    resumo[['Estorno', 'Observação']] = resumo.apply(aplicar_regra, axis=1)
-    
-    # Colunas finais de Check e Estorno de Devolução (M e N)
-    resumo['Check'] = ""
-    resumo['ESTORNO DEV'] = 0
+        # Mapeamento de regras do GitHub
+        mapa_regras = dict(zip(regras_tes['ACUMULADOR'].astype(str).str.strip(), regras_tes['REGRA_ESTORNO']))
 
-    # 6. Salvar na Planilha Final
-    resumo.to_excel(writer, sheet_name='ENTRADAS_AC', index=False)
+        # Agrupamento (Tabela Dinâmica)
+        resumo = df_ge.groupby(['codi_acu', 'nome_acu']).agg({
+            'vlr_cont': 'sum',
+            'base_icms': 'sum',
+            'vlr_icms': 'sum'
+        }).reset_index()
+
+        # Adiciona Estorno e Observação
+        def aplicar_estorno(linha):
+            ac = str(linha['codi_acu']).strip()
+            regra = mapa_regras.get(ac, 'NÃO MAPEADO')
+            if regra == 'ESTORNA TUDO':
+                return pd.Series([linha['vlr_icms'], f"Estorno 100% (AC {ac})"])
+            return pd.Series([0, f"Sem estorno (Regra: {regra})"])
+
+        resumo[['Estorno', 'Observação']] = resumo.apply(aplicar_estorno, axis=1)
+        resumo.to_excel(writer, sheet_name='ENTRADAS_AC', index=False)
+        
+    except Exception as e:
+        st.error(f"Erro ao processar aba Entradas AC: {e}")
 
 def executar_motor_ret(writer, df_xs, df_xe, ge, gs, cod_cliente):
-    """
-    Função principal que o Core chama para orquestrar as abas de Minas.
-    """
     regras = carregar_regras_ret(cod_cliente)
     
     if regras:
-        # 1. Cria a aba Espelho do Mapa (Auditabilidade)
-        if 'Mapa RET' in regras:
-            regras['Mapa RET'].to_excel(writer, sheet_name='MAPA_RET', index=False)
+        # 1. Habilita a aba MAPA_RET (Espelho)
+        aba_mapa = None
+        for nome_aba in regras.keys():
+            if 'MAPA' in nome_aba.upper():
+                aba_mapa = regras[nome_aba]
+                break
         
-        # 2. Cria a aba Entradas AC (Compilado Dinâmico)
-        if 'TES' in regras and ge is not None:
-            # Pega o primeiro gerencial de entrada
+        if aba_mapa is not None:
+            aba_mapa.to_excel(writer, sheet_name='MAPA_RET', index=False)
+        
+        # 2. Habilita a aba ENTRADAS_AC
+        if 'TES' in regras and ge:
             arquivo_ge = ge[0] if isinstance(ge, list) else ge
             gerar_aba_entradas_ac(writer, arquivo_ge, regras['TES'])
             
-        st.success(f"🔺 Processamento RET finalizado para {cod_cliente}.")
+        st.success(f"🔺 Motor RET Minas processado para o cliente {cod_cliente}")
     else:
-        st.error(f"❌ Arquivo {cod_cliente}-RET_MG.xlsx não localizado na pasta 'Bases_Tributárias' do GitHub.")
+        st.error(f"❌ Base de regras {cod_cliente}-RET_MG.xlsx não encontrada no GitHub.")
