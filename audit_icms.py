@@ -2,81 +2,101 @@ import pandas as pd
 import os
 
 def processar_icms(df, writer, cod_cliente):
-    """
-    Realiza a auditoria de ICMS baseada na Base Tributária do cliente.
-    Analisa: Alíquota por UF, Trava de 4% para importados e CST.
-    """
     df_i = df.copy()
 
-    # 1. TENTA CARREGAR A BASE TRIBUTÁRIA DO CLIENTE
-    # O arquivo deve estar na pasta 'bases' com o nome exato do código do cliente
+    # 1. Carregamento da Base Tributária da Empresa (Gabarito)
     caminho_base = f"bases/base_tributaria_{cod_cliente}.xlsx"
-    
     base_gabarito = pd.DataFrame()
     if os.path.exists(caminho_base):
         try:
             base_gabarito = pd.read_excel(caminho_base)
-            # Garante que NCM seja string e tenha 8 dígitos
             base_gabarito['NCM'] = base_gabarito['NCM'].astype(str).str.strip().str.zfill(8)
-        except:
-            pass
+        except: pass
 
-    # 2. DICIONÁRIO DE ALÍQUOTAS INTERESTADUAIS (Regra Geral)
-    # Sul/Sudeste para Norte/Nordeste/ES = 7% | O resto = 12%
-    ALQ_INTER = {
-        'SUL_SUDESTE': ['SP', 'RJ', 'MG', 'PR', 'RS', 'SC'],
-        'NORTE_NORDESTE': ['AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'RN', 'RO', 'RR', 'SE', 'TO']
-    }
-
-    def audit_linha(r):
-        uf_origem = str(r.get('UF_EMIT', ''))
-        uf_destino = str(r.get('UF_DEST', ''))
+    def audit_icms_completa(r):
+        # --- Dados do XML ---
+        uf_orig = str(r.get('UF_EMIT', ''))
+        uf_dest = str(r.get('UF_DEST', ''))
         ncm = str(r.get('NCM', '')).zfill(8)
         origem_prod = str(r.get('ORIGEM', '0'))
-        alq_xml = r.get('ALQ-ICMS', 0.0)
+        cst_xml = str(r.get('CST-ICMS', '00')).zfill(2)
+        alq_xml = float(r.get('ALQ-ICMS', 0.0))
+        vlr_icms_xml = float(r.get('VLR-ICMS', 0.0))
+        bc_icms_xml = float(r.get('BC-ICMS', 0.0))
+        vprod = float(r.get('VPROD', 0.0))
         
-        # --- DEFINIÇÃO DA ALÍQUOTA ESPERADA ---
-        alq_esperada = 18.0 # Default interno
+        # Dados de ST
+        vlr_st_xml = float(r.get('VAL-ICMS-ST', 0.0))
+        bc_st_xml = float(r.get('BC-ICMS-ST', 0.0))
+
+        # --- Gabarito e Regras ---
+        alq_esp = 18.0
+        cst_esp = "00"
+        mva_esp = 0.0
         
-        # Regra 1: Trava de 4% (Produtos Importados ou com conteúdo de importação > 40%)
-        if origem_prod in ['1', '2', '3', '8']:
-            if uf_origem != uf_destino: # Apenas em operações interestaduais
-                alq_esperada = 4.0
-        
-        # Regra 2: Alíquota Interestadual (7% ou 12%) se não for 4%
-        elif uf_origem != uf_destino:
-            if uf_origem in ALQ_INTER['SUL_SUDESTE'] and uf_destino in ALQ_INTER['NORTE_NORDESTE']:
-                alq_esperada = 7.0
+        # Regra Interestadual (4%, 7%, 12%)
+        if uf_orig != uf_dest:
+            if origem_prod in ['1', '2', '3', '8']: alq_esp = 4.0
             else:
-                alq_esperada = 12.0
-                
-        # Regra 3: Consulta a Base Tributária (Gabarito por NCM)
-        # Se o NCM existir no arquivo excel do cliente, ele manda na regra
+                sul_sudeste = ['SP', 'RJ', 'MG', 'PR', 'RS', 'SC']
+                alq_esp = 7.0 if (uf_orig in sul_sudeste and uf_dest not in sul_sudeste + ['ES']) else 12.0
+        
+        # Cruzamento com Gabarito por Empresa
         if not base_gabarito.empty and ncm in base_gabarito['NCM'].values:
-            filtro = base_gabarito[base_gabarito['NCM'] == ncm]
-            # Se houver alíquota específica para a UF de destino no gabarito
-            if 'ALQ_INTER' in filtro.columns:
-                alq_esperada = safe_float(filtro['ALQ_INTER'].values[0])
+            g = base_gabarito[base_gabarito['NCM'] == ncm].iloc[0]
+            if 'CST_ESPERADA' in base_gabarito.columns: cst_esp = str(g['CST_ESPERADA']).zfill(2)
+            if 'ALQ_INTER' in base_gabarito.columns and uf_orig != uf_dest: alq_esp = float(g['ALQ_INTER'])
+            if 'MVA' in base_gabarito.columns: mva_esp = float(g['MVA'])
 
-        # --- DIAGNÓSTICO FINAL ---
-        if abs(alq_xml - alq_esperada) < 0.01:
-            diag = "✅ OK"
-        elif alq_xml > alq_esperada:
-            diag = "⚠️ Alíquota Maior que o Esperado"
-        else:
-            diag = "❌ Alíquota Menor que o Esperado"
+        # --- ANALISE ICMS PRÓPRIO ---
+        status_destaque = "✅ OK"
+        if cst_xml in ['00', '10', '20', '70'] and vlr_icms_xml <= 0: status_destaque = "❌ Falta Destaque"
+        elif cst_xml in ['40', '41', '50'] and vlr_icms_xml > 0: status_destaque = "⚠️ Destaque Indevido"
 
-        return pd.Series([diag, alq_esperada])
+        diag_alq = "✅ OK" if abs(alq_xml - alq_esp) < 0.01 else f"❌ Erro (Esp: {alq_esp}%)"
+        diag_cst = "✅ OK" if cst_xml == cst_esp else f"❌ Divergente (Esp: {cst_esp})"
+        
+        # Auditoria de Base (Redução ou Integral)
+        status_base = "✅ Integral" if abs(bc_icms_xml - vprod) < 0.10 else "⚠️ Reduzida/Diferente"
 
-    # Aplicando a auditoria
-    df_i[['Diagnóstico ICMS', 'Alq. Esperada']] = df_i.apply(audit_linha, axis=1)
+        # --- ANALISE ICMS ST ---
+        diag_st = "✅ OK"
+        if cst_xml in ['10', '30', '70', '90'] and vlr_st_xml <= 0:
+            diag_st = "❌ ST não retido"
+        elif cst_xml == '60' and uf_orig != uf_dest:
+            diag_st = "⚠️ Requer nova retenção"
 
-    # Organizando as colunas para o Excel (Tags originais + Auditoria)
-    cols_finais = [c for c in df_i.columns if c not in ['Diagnóstico ICMS', 'Alq. Esperada', 'Situação Nota']]
-    cols_finais += ['Situação Nota', 'Alq. Esperada', 'Diagnóstico ICMS']
+        # --- AÇÃO CORRETIVA E FUNDAMENTAÇÃO ---
+        acao = "Nenhuma"
+        motivo = "Imposto em conformidade."
 
-    df_i[cols_finais].to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
+        if status_destaque == "❌ Falta Destaque" or alq_xml < alq_esp:
+            acao = "Emitir NF Complementar"
+            motivo = "Diferença de imposto a menor identificada."
+        elif alq_xml > alq_esp:
+            acao = "Procedimento de Estorno"
+            motivo = "Alíquota aplicada maior que o previsto na legislação."
+        elif diag_cst != "✅ OK":
+            acao = "Registrar CC-e"
+            motivo = "Correção de CST sem alteração de valores."
 
-def safe_float(v):
-    try: return float(v)
-    except: return 0.0
+        return pd.Series([
+            status_destaque, diag_alq, alq_esp, 
+            diag_cst, cst_esp, status_base,
+            diag_st, acao, motivo
+        ])
+
+    # Colunas de Análise pós AG
+    analises = [
+        'ICMS_STATUS_DESTAQUE', 'ICMS_DIAG_ALQUOTA', 'ICMS_ALQ_ESPERADA',
+        'ICMS_DIAG_CST', 'ICMS_CST_ESPERADA', 'ICMS_STATUS_BASE',
+        'ICMS_DIAG_ST', 'AÇÃO_CORRETIVA', 'FUNDAMENTAÇÃO'
+    ]
+    
+    df_i[analises] = df_i.apply(audit_icms_completa, axis=1)
+
+    # Organização das Colunas: Originais até AG (Situação Nota) + Analises
+    cols_xml = [c for c in df_i.columns if c not in analises and c != 'Situação Nota']
+    df_final = df_i[cols_xml + ['Situação Nota'] + analises]
+
+    df_final.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
