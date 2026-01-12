@@ -58,12 +58,11 @@ st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
-    # FLAG RET - COM FORMATO DE BANDEIRA (RECORTE BRANCO + TRIÂNGULO) ANTES DO PASSO 2
+    # FLAG RET - APENAS TEXTO, POSICIONADO ANTES DO PASSO 2
     st.write("") 
     col_ret, _ = st.columns([1, 1])
     with col_ret:
-        # A combinação [🏳️🔺] simula o retângulo branco com o triângulo vermelho centralizado
-        is_ret = st.toggle("🏳️🔺 Regime Especial RET (Minas Gerais)")
+        is_ret = st.toggle("Empresa utiliza RET (Minas Gerais)")
 
     # PASSO 2
     st.markdown("<div class='passo-container'>⚖️ PASSO 2: Defina o Regime Tributário</div>", unsafe_allow_html=True)
@@ -96,7 +95,6 @@ if cod_cliente:
                         df_xe = extrair_dados_xml(xe)
                         df_xs = extrair_dados_xml(xs)
                         
-                        # Chamada do motor enviando o flag is_ret
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         
                         st.success("Auditoria Concluída! 🧡")
