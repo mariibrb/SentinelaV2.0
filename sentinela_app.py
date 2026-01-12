@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml, gerar_excel_final
 # Configuração da Página - Visual Sentinela
 st.set_page_config(page_title="Sentinela - Auditoria Fiscal", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# Estilo CSS Sentinela - Restaurado integralmente
+# Estilo CSS Sentinela
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -58,7 +58,7 @@ st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
-    # FLAG RET - APENAS TEXTO, POSICIONADO ANTES DO PASSO 2
+    # FLAG RET
     st.write("") 
     col_ret, _ = st.columns([1, 1])
     with col_ret:
@@ -75,13 +75,15 @@ if cod_cliente:
         
         with c_e:
             st.subheader("📥 ENTRADAS")
-            xe = st.file_uploader("ZIP Entradas (Múltiplos)", type=['zip'], key="xe_v8", accept_multiple_files=True)
+            # Alterado para aceitar ZIP e XML individuais
+            xe = st.file_uploader("XMLs Entradas (ZIP ou XML avulsos)", type=['zip', 'xml'], key="xe_v9", accept_multiple_files=True)
             ge = st.file_uploader("Gerencial Entrada (Múltiplos)", type=['csv', 'xlsx'], key="ge_v8", accept_multiple_files=True)
             ae = st.file_uploader("Autenticidade Entrada (Múltiplos)", type=['xlsx', 'csv'], key="ae_v8", accept_multiple_files=True)
         
         with c_s:
             st.subheader("📤 SAÍDAS")
-            xs = st.file_uploader("ZIP Saídas (Múltiplos)", type=['zip'], key="xs_v8", accept_multiple_files=True)
+            # Alterado para aceitar ZIP e XML individuais
+            xs = st.file_uploader("XMLs Saídas (ZIP ou XML avulsos)", type=['zip', 'xml'], key="xs_v9", accept_multiple_files=True)
             gs = st.file_uploader("Gerencial Saída (Múltiplos)", type=['csv', 'xlsx'], key="gs_v8", accept_multiple_files=True)
             as_f = st.file_uploader("Autenticidade Saída (Múltiplos)", type=['xlsx', 'csv'], key="as_v8", accept_multiple_files=True)
 
@@ -92,6 +94,7 @@ if cod_cliente:
             if st.button("🚀 GERAR RELATÓRIO"):
                 with st.spinner("🧡 Sentinela está processando..."):
                     try:
+                        # O motor extrair_dados_xml deve estar preparado para tratar a lista de arquivos
                         df_xe = extrair_dados_xml(xe)
                         df_xs = extrair_dados_xml(xs)
                         
