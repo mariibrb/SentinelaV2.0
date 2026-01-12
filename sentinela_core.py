@@ -16,7 +16,6 @@ try:
     from audit_pis_cofins import processar_pc
     from audit_difal import processar_difal
     from apuracao_difal import gerar_resumo_uf
-    # Módulo de Minas Gerais
     from RET.motor_ret import executar_motor_ret
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
@@ -115,51 +114,44 @@ def extrair_dados_xml(files):
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     
-    # Cabeçalhos fornecidos pelo usuário
+    # Cabeçalhos exatos conforme sua solicitação
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
-    def ler_dominio(arquivos, colunas_modelo):
+    def ler_dominio_limpo(arquivos, colunas_alvo):
         if arquivos is None: return pd.DataFrame()
         lista = arquivos if isinstance(arquivos, list) else [arquivos]
         dfs = []
         for f in lista:
             f.seek(0)
-            df = pd.read_csv(f, sep=None, engine='python', encoding='latin1', on_bad_lines='skip', header=None, dtype=str)
-            cols_reais = len(df.columns)
-            # Ajuste dinâmico de nomes
-            if cols_reais > len(colunas_modelo):
-                nomes = colunas_modelo + [f"EXTRA_{i}" for i in range(cols_reais - len(colunas_modelo))]
-            else:
-                nomes = colunas_modelo[:cols_reais]
-            df.columns = nomes
+            # Lemos forçando separador para evitar o "formato estranho"
+            # header=None para ignorar cabeçalhos originais e names para aplicar os seus
+            df = pd.read_csv(f, sep=None, engine='python', encoding='latin1', on_bad_lines='skip', header=None, names=colunas_alvo, dtype=str)
+            # Limpa espaços em branco que o sistema da domínio costuma exportar
+            df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
             dfs.append(df)
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # Core realiza a leitura para alimentar as abas gerenciais
-    df_ger_ent = ler_dominio(ge, cols_ent)
-    df_ger_sai = ler_dominio(gs, cols_sai)
+    # Core alimenta os gerenciais com as colunas corretas
+    df_ger_ent = ler_dominio_limpo(ge, cols_ent)
+    df_ger_sai = ler_dominio_limpo(gs, cols_sai)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Aba 1: Resumo
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Aba 2 e 3: Gerenciais (Core alimenta com os cabeçalhos de 31 e 32 colunas)
+        # Criação das abas com a réplica exata e cabeçalhos solicitados
         if not df_ger_ent.empty:
             df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         if not df_ger_sai.empty:
             df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
-        # Módulo RET (Minas Gerais)
         if is_ret:
             try:
-                # Motor RET apenas cruza o que o Core já leu
                 executar_motor_ret(writer, df_xs, df_xe, df_ger_ent, df_ger_sai, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
 
-        # Auditorias Padrão
         if not df_xs.empty:
             st_map = {}
             if as_f:
