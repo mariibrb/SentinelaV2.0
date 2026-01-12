@@ -22,7 +22,7 @@ def gerar_resumo_uf(df, writer):
     
     df_validas['SENTIDO'] = df_validas['CFOP'].apply(identificar_sentido)
 
-    # 3. Preparação das Tabelas (Tratando a IE como Texto)
+    # 3. Preparação das Tabelas (Tratando a IEST como Texto)
     def preparar_tabela(df_origem):
         agrupado = df_origem.groupby(['UF_DEST']).agg({
             'VAL-ICMS-ST': 'sum', 
@@ -37,7 +37,7 @@ def gerar_resumo_uf(df, writer):
         base = pd.DataFrame({'UF_DEST': UFS_BRASIL})
         final = pd.merge(base, agrupado, on='UF_DEST', how='left').fillna(0)
         
-        # BUSCA A IE: Garante que seja tratada como STRING para não virar número científico
+        # BUSCA A IEST: Captura a sua Inscrição de Substituto mapeada no Core
         ie_map = df_origem[df_origem['IE_SUBST'] != ""].groupby('UF_DEST')['IE_SUBST'].first().to_dict()
         final['IE_SUBST'] = final['UF_DEST'].map(ie_map).fillna("").astype(str)
         
@@ -46,9 +46,9 @@ def gerar_resumo_uf(df, writer):
     res_s = preparar_tabela(df_validas[df_validas['SENTIDO'] == 'SAÍDA'])
     res_e = preparar_tabela(df_validas[df_validas['SENTIDO'] == 'ENTRADA'])
 
-    # 4. Cálculo do Saldo Líquido
+    # 4. Cálculo do Saldo Líquido (Regra de Negócio: IEST = Apuração Mensal)
     res_saldo = pd.DataFrame({'UF': UFS_BRASIL})
-    res_saldo['IE_SUBST'] = res_s['IE_SUBST'] # Replica a IE na tabela de Saldo
+    res_saldo['IE_SUBST'] = res_s['IE_SUBST'] 
     
     calculos = [
         ('VAL-ICMS-ST', 'ST LÍQUIDO'), 
@@ -58,6 +58,7 @@ def gerar_resumo_uf(df, writer):
     ]
     
     for c_xml, c_fin in calculos:
+        # REGRA: Se houver IEST (Inscrição), abate Entradas da Saída. Se não, Saldo = Saída.
         res_saldo[c_fin] = res_saldo['UF'].apply(
             lambda x: (res_s.loc[res_s['UF_DEST']==x, c_xml].values[0] - res_e.loc[res_e['UF_DEST']==x, c_xml].values[0])
             if res_s.loc[res_s['UF_DEST']==x, 'IE_SUBST'].values[0] != "" else res_s.loc[res_s['UF_DEST']==x, c_xml].values[0]
@@ -75,44 +76,46 @@ def gerar_resumo_uf(df, writer):
     num_fmt = workbook.add_format({'num_format': '#,##0.00', 'border': 1})
     border_fmt = workbook.add_format({'border': 1})
     
-    # Formatos Laranja (Para linhas com IE)
+    # Formatos Laranja (UFs com Inscrição Estadual)
     orange_fill = workbook.add_format({'bg_color': '#FFDAB9', 'border': 1})
     orange_num = workbook.add_format({'bg_color': '#FFDAB9', 'border': 1, 'num_format': '#,##0.00'})
     
     total_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'num_format': '#,##0.00'})
 
-    h_padrao = ['UF', 'IE SUBST', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
-    h_saldo = ['UF', 'IE SUBST', 'ST LÍQUIDO', 'DIFAL LÍQUIDO', 'FCP LÍQUIDO', 'FCP-ST LÍQUIDO']
+    h_padrao = ['UF', 'IEST (SUBST)', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
+    h_saldo = ['UF', 'IEST (SUBST)', 'ST LÍQUIDO', 'DIFAL LÍQUIDO', 'FCP LÍQUIDO', 'FCP-ST LÍQUIDO']
 
     for df_t, start_c, title, heads in [(res_s, 0, "1. SAÍDAS", h_padrao), (res_e, 7, "2. ENTRADAS", h_padrao), (res_saldo, 14, "3. SALDO", h_saldo)]:
         
+        # Cabeçalho da Tabela
         worksheet.merge_range(0, start_c, 0, start_c + 5, title, title_fmt)
-        
         for i, h in enumerate(heads):
             worksheet.write(2, start_c + i, h, header_fmt)
         
+        # Preenchimento dos Dados
         for r_idx, row in enumerate(df_t.values):
             uf = str(row[0]).strip()
-            # Pinta de laranja se a UF tiver IE preenchida na tabela de SAÍDAS
+            # Identifica se a UF é laranja baseada na presença da IEST na tabela de Saídas
             tem_ie = res_s.loc[res_s['UF_DEST'] == uf, 'IE_SUBST'].values[0] != ""
             
             for c_idx, val in enumerate(row):
-                # Escolha do formato baseado na existência de IE
+                # Define o formato (Laranja ou Padrão)
                 if tem_ie:
                     fmt = orange_num if isinstance(val, (int, float)) else orange_fill
                 else:
                     fmt = num_fmt if isinstance(val, (int, float)) else border_fmt
                 
-                # ESCREVE O VALOR: Garante que a IE (coluna de índice 1) seja escrita como texto
+                # Escreve a IEST como string para evitar notação científica
                 if c_idx == 1:
                     worksheet.write_string(r_idx + 3, start_c + c_idx, str(val), fmt)
                 else:
                     worksheet.write(r_idx + 3, start_c + c_idx, val, fmt)
 
-        # Totais
+        # Totais na linha 31 (Excel 4 a 30)
         worksheet.write(30, start_c, "TOTAL GERAL", total_fmt)
         worksheet.write(30, start_c + 1, "", total_fmt)
         for i in range(2, 6):
             col_idx = start_c + i
+            # Converte índice numérico para letra da coluna do Excel
             col_let = chr(65 + col_idx) if col_idx < 26 else f"A{chr(65 + col_idx - 26)}"
             worksheet.write(30, col_idx, f'=SUM({col_let}4:{col_let}30)', total_fmt)
