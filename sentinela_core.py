@@ -43,7 +43,7 @@ def safe_float(v):
 def processar_conteudo_xml(content, dados_lista):
     """
     Analisa o XML removendo namespaces e mapeando todas as tags fiscais.
-    Extrai a IEST (813032863112) do grupo <emit> conforme o padrão do usuário.
+    Extrai a IEST (813032863112) de qualquer lugar do arquivo onde ela apareça.
     """
     try:
         xml_str = content.decode('utf-8', errors='replace')
@@ -51,100 +51,75 @@ def processar_conteudo_xml(content, dados_lista):
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
-        def tag_val(t, n):
-            """Procura valor de uma tag específica num nó."""
-            if n is None: return ""
-            v = n.find(f'.//{t}')
-            return v.text if v is not None and v.text else ""
-            
-        def rec_val(n, ts):
-            """Busca recursiva em lista de tags (Ex: CST ou CSOSN)."""
-            if n is None: return ""
-            for e in n.iter():
-                tag_name = e.tag.split('}')[-1]
-                if tag_name in ts:
-                    return e.text if e.text else ""
+        # FUNÇÃO DE BUSCA RECURSIVA (O SEGREDO PARA A COLUNA B)
+        def buscar_em_todo_lugar(tag_alvo, no):
+            if no is None: return ""
+            for elemento in no.iter():
+                # Compara apenas o nome final da tag, ignorando namespaces
+                if elemento.tag.split('}')[-1] == tag_alvo:
+                    return elemento.text if elemento.text else ""
             return ""
 
-        # --- DADOS DO CABEÇALHO (infNFe) ---
+        # Captura a IEST logo na entrada (seja no emitente ou no endereço)
+        iest_global = buscar_em_todo_lugar('IEST', root) or buscar_em_todo_lugar('IESTDest', root)
+
         inf = root.find('.//infNFe')
         if inf is None: return 
         
         emit = root.find('.//emit')
         dest = root.find('.//dest')
-        enderEmit = emit.find('.//enderEmit') if emit is not None else None
         
         chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
-        n_nf = tag_val('nNF', root)
-        
-        # --- CAPTURA DA IEST (A CHAVE PARA PREENCHER A COLUNA B) ---
-        # No seu XML, a IE de Substituto está dentro de <emit>
-        iest_cabecalho = tag_val('IEST', emit) or tag_val('IEST', enderEmit) or tag_val('IE_SUBST', emit)
+        n_nf = buscar_em_todo_lugar('nNF', root)
 
-        # --- PROCESSAMENTO DOS ITENS (DET) ---
+        # Iteração sobre os Itens (det)
         for det in root.findall('.//det'):
             prod = det.find('prod')
             imp = det.find('imposto')
-            
             if prod is None or imp is None: continue
             
-            # Subgrupos de Impostos do Item
+            # Subgrupos de Impostos
             icms = imp.find('.//ICMS')
-            pis = imp.find('.//PIS')
-            cofins = imp.find('.//COFINS')
-            ipi = imp.find('.//IPI')
             
             # Captura de DIFAL e FCP Interestadual
-            v_difal_base = safe_float(rec_val(imp, ['vICMSUFDest', 'vICMSPart', 'vICMSDIFAL']))
-            v_fcp_difal = safe_float(rec_val(imp, ['vFCPUFDest', 'vFCPPart']))
+            v_difal_base = safe_float(buscar_em_todo_lugar('vICMSUFDest', imp))
+            v_fcp_difal = safe_float(buscar_em_todo_lugar('vFCPUFDest', imp))
             
-            # Lógica de Herança da IEST: Prioridade item -> Cabeçalho
-            iest_item = rec_val(icms, ['IEST', 'IESTDest', 'IE_SUBST'])
-            ie_final = iest_item if iest_item and iest_item.strip() != "" else iest_cabecalho
+            # IEST do item ou a Global da Nota
+            iest_item = buscar_em_todo_lugar('IEST', icms)
+            ie_subst_final = iest_item if iest_item != "" else iest_global
 
-            # Mapeamento Completo de Colunas (Maximalista)
             linha = {
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
-                "CNPJ_EMIT": tag_val('CNPJ', emit),
-                "CNPJ_DEST": tag_val('CNPJ', dest),
-                "CPF_DEST": tag_val('CPF', dest),
-                "UF_EMIT": tag_val('UF', emit),
-                "UF_DEST": tag_val('UF', dest),
-                "indIEDest": tag_val('indIEDest', dest),
+                "CNPJ_EMIT": buscar_em_todo_lugar('CNPJ', emit),
+                "CNPJ_DEST": buscar_em_todo_lugar('CNPJ', dest),
+                "UF_EMIT": buscar_em_todo_lugar('UF', emit),
+                "UF_DEST": buscar_em_todo_lugar('UF', dest),
+                "CFOP": buscar_em_todo_lugar('CFOP', prod),
+                "NCM": re.sub(r'\D', '', buscar_em_todo_lugar('NCM', prod)).zfill(8),
+                "VPROD": safe_float(buscar_em_todo_lugar('vProd', prod)),
                 
-                "CFOP": tag_val('CFOP', prod),
-                "NCM": re.sub(r'\D', '', tag_val('NCM', prod)).zfill(8),
-                "VPROD": safe_float(tag_val('vProd', prod)),
+                "ORIGEM": buscar_em_todo_lugar('orig', icms),
+                "CST-ICMS": buscar_em_todo_lugar('CST', icms) or buscar_em_todo_lugar('CSOSN', icms),
+                "BC-ICMS": safe_float(buscar_em_todo_lugar('vBC', icms)),
+                "ALQ-ICMS": safe_float(buscar_em_todo_lugar('pICMS', icms)),
+                "VLR-ICMS": safe_float(buscar_em_todo_lugar('vICMS', icms)),
                 
-                "ORIGEM": rec_val(icms, ['orig']),
-                "CST-ICMS": rec_val(icms, ['CST', 'CSOSN']).zfill(2),
-                "BC-ICMS": safe_float(rec_val(imp, ['vBC'])),
-                "ALQ-ICMS": safe_float(rec_val(imp, ['pICMS'])),
-                "VLR-ICMS": safe_float(rec_val(imp, ['vICMS'])),
-                
-                "CST-PIS": rec_val(pis, ['CST']),
-                "VAL-PIS": safe_float(rec_val(pis, ['vPIS'])),
-                "CST-COF": rec_val(cofins, ['CST']),
-                "VAL-COF": safe_float(rec_val(cofins, ['vCOFINS'])),
-                "CST-IPI": rec_val(ipi, ['CST']),
-                "ALQ-IPI": safe_float(rec_val(ipi, ['pIPI'])),
-                "VAL-IPI": safe_float(rec_val(ipi, ['vIPI'])),
-                
+                # DIFAL / ST / FCP
                 "VAL-DIFAL": v_difal_base + v_fcp_difal,
                 "VAL-FCP-DEST": v_fcp_difal,
-                "VAL-ICMS-ST": safe_float(rec_val(imp, ['vICMSST'])),
-                "BC-ICMS-ST": safe_float(rec_val(imp, ['vBCST'])),
-                "VAL-FCP-ST": safe_float(rec_val(imp, ['vFCPST'])),
-                "VAL-FCP": safe_float(rec_val(imp, ['vFCP'])),
+                "VAL-ICMS-ST": safe_float(buscar_em_todo_lugar('vICMSST', imp)),
+                "BC-ICMS-ST": safe_float(buscar_em_todo_lugar('vBCST', imp)),
+                "VAL-FCP-ST": safe_float(buscar_em_todo_lugar('vFCPST', imp)),
+                "VAL-FCP": safe_float(buscar_em_todo_lugar('vFCP', imp)),
                 
                 # --- COLUNA B: IE SUBSTITUTO (813032863112) ---
-                "IE_SUBST": str(ie_final).strip(),
+                "IE_SUBST": str(ie_subst_final).strip(),
                 
-                "VAL-IBS": safe_float(rec_val(imp, ['vIBS'])),
-                "ALQ-IBS": safe_float(rec_val(imp, ['pIBS'])),
-                "VAL-CBS": safe_float(rec_val(imp, ['vCBS'])),
-                "ALQ-CBS": safe_float(rec_val(imp, ['pCBS']))
+                # Reforma Tributária
+                "VAL-IBS": safe_float(buscar_em_todo_lugar('vIBS', imp)),
+                "VAL-CBS": safe_float(buscar_em_todo_lugar('vCBS', imp))
             }
             dados_lista.append(linha)
             
@@ -152,7 +127,6 @@ def processar_conteudo_xml(content, dados_lista):
         pass
 
 def extrair_dados_xml(files):
-    """Lida com múltiplos arquivos ZIP e unifica os dados em um DataFrame."""
     dados_lista = []
     if not files: return pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
@@ -167,15 +141,10 @@ def extrair_dados_xml(files):
     return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
-    """Orquestra a criação do Excel com todos os módulos especialistas."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        
-        # 1. ABA RESUMO
         try: gerar_aba_resumo(writer)
         except: pass
-        
-        # 2 e 3. GERENCIAIS
         try: gerar_abas_gerenciais(writer, ge, gs)
         except: pass
 
@@ -186,18 +155,12 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
                     f_auth_list = as_f if isinstance(as_f, list) else [as_f]
                     for f_auth in f_auth_list:
                         f_auth.seek(0)
-                        if f_auth.name.endswith('.xlsx'):
-                            df_auth = pd.read_excel(f_auth, header=None)
-                        else:
-                            df_auth = pd.read_csv(f_auth, header=None, sep=None, engine='python')
-                        
+                        df_auth = pd.read_excel(f_auth, header=None) if f_auth.name.endswith('.xlsx') else pd.read_csv(f_auth, header=None, sep=None, engine='python')
                         df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_auth.set_index(0)[5].to_dict())
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
-            
-            # Auditorias Especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
