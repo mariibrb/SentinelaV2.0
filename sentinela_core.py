@@ -16,7 +16,6 @@ try:
     from audit_pis_cofins import processar_pc
     from audit_difal import processar_difal
     from apuracao_difal import gerar_resumo_uf
-    # Importação do Motor de Minas Gerais
     from RET.motor_ret import executar_motor_ret
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
@@ -94,11 +93,9 @@ def processar_conteudo_xml(content, dados_lista):
     except: pass
 
 def extrair_dados_xml(files):
-    """Lê uma lista de arquivos que pode conter ZIPs ou XMLs avulsos"""
     dados_lista = []
     if not files: return pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
-    
     for f in lista_trabalho:
         try:
             if f.name.lower().endswith('.xml'):
@@ -115,50 +112,56 @@ def extrair_dados_xml(files):
     return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
-    """
-    Função principal: Coordena a leitura dos arquivos e a execução dos módulos.
-    """
     output = io.BytesIO()
+    
+    # Listas de Colunas Domínio Sistemas
+    cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
+    cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
+
+    def ler_csv_dominio(arquivo, colunas):
+        if arquivo is None: return pd.DataFrame()
+        lista = arquivo if isinstance(arquivo, list) else [arquivo]
+        dfs = []
+        for a in lista:
+            a.seek(0)
+            df = pd.read_csv(a, sep=None, engine='python', encoding='latin1', on_bad_lines='skip', header=None, dtype=str)
+            if len(df.columns) >= len(colunas):
+                df = df.iloc[:, :len(colunas)]
+                df.columns = colunas
+            dfs.append(df)
+        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    # Processamento Core dos Gerenciais
+    df_ger_e = ler_csv_dominio(ge, cols_ent)
+    df_ger_s = ler_csv_dominio(gs, cols_sai)
+
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        
-        # 1. Geração da Aba de Resumo Inicial
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # 2. Processamento das Gerenciais (Onde os títulos de coluna são validados)
-        # O Core passa os arquivos 'ge' e 'gs' para o especialista gerencial tratar
-        try: 
-            gerar_abas_gerenciais(writer, ge, gs)
-        except Exception as e:
-            st.error(f"Erro no Processamento Gerencial: {e}")
-        
-        # 3. MÓDULO MINAS GERAIS (Só executa se flag is_ret estiver ativa)
+        # O CORE CRIA AS ABAS GERENCIAIS AQUI
+        if not df_ger_e.empty: df_ger_e.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
+        if not df_ger_s.empty: df_ger_s.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
+
         if is_ret:
             try:
-                # O motor_ret lerá os arquivos e cruzará com os XMLs já processados
-                executar_motor_ret(writer, df_xs, df_xe, ge, gs, cod_cliente)
+                # O motor RET agora recebe os DataFrames já montados pelo Core
+                executar_motor_ret(writer, df_xs, df_xe, df_ger_e, df_ger_s, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
 
-        # 4. Processamento das Auditorias de Saída (Baseado nos XMLs)
         if not df_xs.empty:
             st_map = {}
             if as_f:
                 try:
                     for f in (as_f if isinstance(as_f, list) else [as_f]):
                         f.seek(0)
-                        if f.name.endswith('.xlsx'):
-                            df_a = pd.read_excel(f, header=None)
-                        else:
-                            df_a = pd.read_csv(f, header=None, sep=None, engine='python')
-                        
+                        df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
                         df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
-            
-            # Execução das Auditorias Especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
