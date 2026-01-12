@@ -5,6 +5,7 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 import re
 import os
+from datetime import datetime
 
 # --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
@@ -16,16 +17,16 @@ try:
     from audit_difal import processar_difal
     from apuracao_difal import gerar_resumo_uf
 except ImportError as e:
-    st.error(f"Erro Crítico: Não foi possível carregar os módulos de auditoria: {e}")
+    st.error(f"Erro Crítico de Dependência: {e}")
 
-# --- UTILITÁRIOS DE CONVERSÃO ---
+# --- UTILITÁRIOS DE CONVERSÃO E SEGURANÇA ---
 
 def safe_float(v):
-    """Converte valores do XML para float de forma segura, tratando formatos brasileiros."""
+    """Converte valores do XML para float com alta tolerância a erros de formatação."""
     if v is None or pd.isna(v):
         return 0.0
     txt = str(v).strip().upper()
-    if txt in ['NT', '', 'N/A', 'ISENTO', 'NULL']:
+    if txt in ['NT', '', 'N/A', 'ISENTO', 'NULL', 'NONE']:
         return 0.0
     try:
         txt = txt.replace('R$', '').replace(' ', '').replace('%', '').strip()
@@ -37,27 +38,27 @@ def safe_float(v):
     except (ValueError, TypeError):
         return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML ---
+# --- MOTOR DE PROCESSAMENTO XML MAXIMALISTA ---
 
 def processar_conteudo_xml(content, dados_lista):
     """
-    Analisa o conteúdo binário de um XML, remove namespaces e extrai 
-    todas as tags relevantes para a auditoria fiscal maximalista.
+    Analisa o XML removendo namespaces e mapeando todas as tags fiscais.
+    Extrai a IEST (813032863112) do grupo <emit> conforme o padrão do usuário.
     """
     try:
         xml_str = content.decode('utf-8', errors='replace')
-        # Limpeza agressiva de Namespaces para garantir que as buscas não falhem
+        # Limpeza total de Namespaces para garantir a localização das tags
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
         def tag_val(t, n):
-            """Busca valor de uma tag simples em um nó específico."""
+            """Procura valor de uma tag específica num nó."""
             if n is None: return ""
             v = n.find(f'.//{t}')
             return v.text if v is not None and v.text else ""
             
         def rec_val(n, ts):
-            """Busca o valor da primeira tag encontrada em uma lista de possibilidades."""
+            """Busca recursiva em lista de tags (Ex: CST ou CSOSN)."""
             if n is None: return ""
             for e in n.iter():
                 tag_name = e.tag.split('}')[-1]
@@ -65,7 +66,7 @@ def processar_conteudo_xml(content, dados_lista):
                     return e.text if e.text else ""
             return ""
 
-        # --- CABEÇALHO DA NOTA ---
+        # --- DADOS DO CABEÇALHO (infNFe) ---
         inf = root.find('.//infNFe')
         if inf is None: return 
         
@@ -76,31 +77,32 @@ def processar_conteudo_xml(content, dados_lista):
         chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
         n_nf = tag_val('nNF', root)
         
-        # BUSCA DA IEST (Inscrição de Substituto) NO CABEÇALHO (Grupo emit ou enderEmit)
+        # --- CAPTURA DA IEST (A CHAVE PARA PREENCHER A COLUNA B) ---
+        # No seu XML, a IE de Substituto está dentro de <emit>
         iest_cabecalho = tag_val('IEST', emit) or tag_val('IEST', enderEmit) or tag_val('IE_SUBST', emit)
 
-        # --- PROCESSAMENTO DOS ITENS (det) ---
+        # --- PROCESSAMENTO DOS ITENS (DET) ---
         for det in root.findall('.//det'):
             prod = det.find('prod')
             imp = det.find('imposto')
             
             if prod is None or imp is None: continue
             
-            # Subgrupos de Impostos
+            # Subgrupos de Impostos do Item
             icms = imp.find('.//ICMS')
             pis = imp.find('.//PIS')
             cofins = imp.find('.//COFINS')
             ipi = imp.find('.//IPI')
             
-            # Captura de DIFAL e Partilha (Interestadual)
-            v_difal_dest = safe_float(rec_val(imp, ['vICMSUFDest', 'vICMSPart', 'vICMSDIFAL']))
-            v_fcp_dest = safe_float(rec_val(imp, ['vFCPUFDest', 'vFCPPart']))
+            # Captura de DIFAL e FCP Interestadual
+            v_difal_base = safe_float(rec_val(imp, ['vICMSUFDest', 'vICMSPart', 'vICMSDIFAL']))
+            v_fcp_difal = safe_float(rec_val(imp, ['vFCPUFDest', 'vFCPPart']))
             
-            # Prioridade para IEST do item, se vazio, usa a do cabeçalho
+            # Lógica de Herança da IEST: Prioridade item -> Cabeçalho
             iest_item = rec_val(icms, ['IEST', 'IESTDest', 'IE_SUBST'])
-            ie_subst_final = iest_item if iest_item and iest_item.strip() != "" else iest_cabecalho
+            ie_final = iest_item if iest_item and iest_item.strip() != "" else iest_cabecalho
 
-            # Mapeamento Maximalista de Colunas
+            # Mapeamento Completo de Colunas (Maximalista)
             linha = {
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
@@ -129,15 +131,15 @@ def processar_conteudo_xml(content, dados_lista):
                 "ALQ-IPI": safe_float(rec_val(ipi, ['pIPI'])),
                 "VAL-IPI": safe_float(rec_val(ipi, ['vIPI'])),
                 
-                "VAL-DIFAL": v_difal_dest + v_fcp_dest,
-                "VAL-FCP-DEST": v_fcp_dest,
+                "VAL-DIFAL": v_difal_base + v_fcp_difal,
+                "VAL-FCP-DEST": v_fcp_difal,
                 "VAL-ICMS-ST": safe_float(rec_val(imp, ['vICMSST'])),
                 "BC-ICMS-ST": safe_float(rec_val(imp, ['vBCST'])),
                 "VAL-FCP-ST": safe_float(rec_val(imp, ['vFCPST'])),
                 "VAL-FCP": safe_float(rec_val(imp, ['vFCP'])),
                 
                 # --- COLUNA B: IE SUBSTITUTO (813032863112) ---
-                "IE_SUBST": str(ie_subst_final).strip(),
+                "IE_SUBST": str(ie_final).strip(),
                 
                 "VAL-IBS": safe_float(rec_val(imp, ['vIBS'])),
                 "ALQ-IBS": safe_float(rec_val(imp, ['pIBS'])),
@@ -150,7 +152,7 @@ def processar_conteudo_xml(content, dados_lista):
         pass
 
 def extrair_dados_xml(files):
-    """Suporta múltiplos arquivos ZIP enviados pelo Streamlit"""
+    """Lida com múltiplos arquivos ZIP e unifica os dados em um DataFrame."""
     dados_lista = []
     if not files: return pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
@@ -165,10 +167,15 @@ def extrair_dados_xml(files):
     return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
+    """Orquestra a criação do Excel com todos os módulos especialistas."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        
+        # 1. ABA RESUMO
         try: gerar_aba_resumo(writer)
         except: pass
+        
+        # 2 e 3. GERENCIAIS
         try: gerar_abas_gerenciais(writer, ge, gs)
         except: pass
 
@@ -179,19 +186,22 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
                     f_auth_list = as_f if isinstance(as_f, list) else [as_f]
                     for f_auth in f_auth_list:
                         f_auth.seek(0)
-                        if f_auth.name.endswith('.xlsx'): df_auth = pd.read_excel(f_auth, header=None)
-                        else: df_auth = pd.read_csv(f_auth, header=None, sep=None, engine='python', on_bad_lines='skip')
+                        if f_auth.name.endswith('.xlsx'):
+                            df_auth = pd.read_excel(f_auth, header=None)
+                        else:
+                            df_auth = pd.read_csv(f_auth, header=None, sep=None, engine='python')
+                        
                         df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_auth.set_index(0)[5].to_dict())
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chamada das Auditorias
+            # Auditorias Especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
-            gerar_resumo_uf(df_xs, writer)
+            gerar_resumo_uf(df_xs, writer) 
 
     return output.getvalue()
