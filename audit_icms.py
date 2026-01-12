@@ -43,15 +43,20 @@ def processar_icms(df, writer, cod_cliente):
             if 'CST_ESPERADA' in base_gabarito.columns: cst_esp = str(g['CST_ESPERADA']).zfill(2)
             if 'ALQ_INTER' in base_gabarito.columns and uf_orig != uf_dest: alq_esp = float(g['ALQ_INTER'])
 
-        # --- DIAGNÓSTICOS CONDICIONAIS (LIMPOS) ---
+        # --- CÁLCULO DO VALOR COMPLEMENTAR ---
+        # Calcula o imposto real devido sobre a base do XML
+        vlr_icms_devido = round(bc_icms_xml * (alq_esp / 100), 2)
+        vlr_complementar = max(0.0, round(vlr_icms_devido - vlr_icms_xml, 2))
+
+        # --- DIAGNÓSTICOS CONDICIONAIS ---
         
-        # 1. Alíquota: Se OK mostra ✅ OK. Se Erro, mostra (XML vs Esp)
+        # 1. Alíquota
         if abs(alq_xml - alq_esp) < 0.01:
             diag_alq = "✅ OK"
         else:
             diag_alq = f"❌ Erro (XML: {alq_xml}% | Esp: {alq_esp}%)"
 
-        # 2. CST: Se OK mostra ✅ OK. Se Erro, mostra (XML vs Esp)
+        # 2. CST
         if cst_xml == cst_esp:
             diag_cst = "✅ OK"
         else:
@@ -76,9 +81,9 @@ def processar_icms(df, writer, cod_cliente):
         acao = "Nenhuma"
         motivo = "Imposto em conformidade."
 
-        if "❌" in diag_alq or status_destaque == "❌ Falta Destaque":
+        if vlr_complementar > 0:
             acao = "Emitir NF Complementar"
-            motivo = "Diferença de imposto identificado a menor."
+            motivo = f"Faltou destacar R$ {vlr_complementar} de ICMS."
         elif alq_xml > alq_esp:
             acao = "Procedimento de Estorno"
             motivo = "Alíquota aplicada maior que o previsto."
@@ -88,14 +93,14 @@ def processar_icms(df, writer, cod_cliente):
 
         return pd.Series([
             status_destaque, diag_alq, diag_cst, 
-            status_base, diag_st, acao, motivo
+            status_base, diag_st, vlr_complementar, acao, motivo
         ])
 
-    # Colunas de Análise pós AG (Limpas e Condicionais)
+    # Colunas de Análise pós AG
     analises = [
         'ICMS_STATUS_DESTAQUE', 'ICMS_DIAG_ALQUOTA', 
         'ICMS_DIAG_CST', 'ICMS_STATUS_BASE',
-        'ICMS_DIAG_ST', 'AÇÃO_CORRETIVA', 'FUNDAMENTAÇÃO'
+        'ICMS_DIAG_ST', 'VALOR_NF_COMPLEMENTAR', 'AÇÃO_CORRETIVA', 'FUNDAMENTAÇÃO'
     ]
     
     df_i[analises] = df_i.apply(audit_icms_completa, axis=1)
