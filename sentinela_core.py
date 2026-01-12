@@ -114,17 +114,18 @@ def extrair_dados_xml(files):
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     
-    # Listas oficiais solicitadas
+    # Cabeçalhos solicitados
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
-    def ler_csv_dominio_excel_style(arquivos, colunas_alvo):
+    def ler_csv_dominio_blindado(arquivos, colunas_alvo):
         if arquivos is None: return pd.DataFrame()
         lista = arquivos if isinstance(arquivos, list) else [arquivos]
         dfs = []
         for f in lista:
             f.seek(0)
-            # Lemos forçando engine python e separador automático (detecta \t do Excel/Domínio)
+            # engine='python' e sep=None lidam melhor com as variações de tabulação
+            # on_bad_lines='skip' evita travar se uma linha vier corrompida
             df = pd.read_csv(
                 f, 
                 sep=None, 
@@ -133,35 +134,38 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 on_bad_lines='skip', 
                 header=None, 
                 dtype=str,
+                quotechar='"', # Protege textos que contenham o separador
                 skip_blank_lines=True
             )
             
-            # Forçamos o DataFrame a ter exatamente o número de colunas da lista
+            # Forçamos o reajuste para garantir as 31 ou 32 colunas
+            # Se vierem colunas vazias extras ou a menos, nós normalizamos o DataFrame
             esperadas = len(colunas_alvo)
             reais = len(df.columns)
             
             if reais > esperadas:
-                df = df.iloc[:, :esperadas] # Corta excesso
+                df = df.iloc[:, :esperadas] # Corta excesso de delimitadores vazios no fim
             elif reais < esperadas:
-                # Preenche faltantes com vazio para não quebrar a nomeação
+                # Se faltar coluna (tabulação vazia no fim), preenche com string vazia
                 for i in range(reais, esperadas):
                     df[i] = ""
             
             df.columns = colunas_alvo
-            df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+            # Limpa espaços e garante que vazios virem ""
+            df = df.fillna("").apply(lambda x: x.str.strip() if x.dtype == "object" else x)
             dfs.append(df)
             
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # Core processa os CSVs da Higietop
-    df_ger_ent = ler_csv_dominio_excel_style(ge, cols_ent)
-    df_ger_sai = ler_csv_dominio_excel_style(gs, cols_sai)
+    # Core processa os CSVs alimentando as Gerenciais
+    df_ger_ent = ler_csv_dominio_blindado(ge, cols_ent)
+    df_ger_sai = ler_csv_dominio_blindado(gs, cols_sai)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Abas Gerenciais (Réplica exata com 31 e 32 colunas)
+        # Abas Gerenciais (Criação pelo Core conforme solicitado)
         if not df_ger_ent.empty:
             df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         if not df_ger_sai.empty:
@@ -169,7 +173,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
 
         if is_ret:
             try:
-                # Motor RET cria abas vazias conforme pedido
+                # Motor RET cria abas vazias
                 executar_motor_ret(writer, df_xs, df_xe, df_ger_ent, df_ger_sai, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
