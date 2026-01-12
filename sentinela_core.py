@@ -28,7 +28,6 @@ def safe_float(v):
     if txt in ['NT', '', 'N/A', 'ISENTO', 'NULL']:
         return 0.0
     try:
-        # Remove símbolos monetários e ajusta separadores decimais
         txt = txt.replace('R$', '').replace(' ', '').replace('%', '').strip()
         if ',' in txt and '.' in txt:
             txt = txt.replace('.', '').replace(',', '.')
@@ -47,7 +46,6 @@ def processar_conteudo_xml(content, dados_lista):
     """
     try:
         xml_str = content.decode('utf-8', errors='replace')
-        # Remove namespaces para permitir buscas simplificadas com find/findall
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
@@ -68,42 +66,41 @@ def processar_conteudo_xml(content, dados_lista):
 
         # --- CABEÇALHO DA NOTA ---
         inf = root.find('.//infNFe')
-        if inf is None: return # Ignora se não for uma NF-e válida
+        if inf is None: return 
         
         emit = root.find('.//emit')
         dest = root.find('.//dest')
-        enderEmit = emit.find('.//enderEmit') if emit is not None else None
         
-        chave = inf.attrib.get('Id', '')[3:] # Remove o prefixo 'NFe'
+        # BUSCA MANUAL DA IEST NO enderEmit (Conforme sua pesquisa: emit -> enderEmit -> IEST)
+        iest_header = ""
+        enderEmit = root.find('.//emit/enderEmit')
+        if enderEmit is not None:
+            iest_node = enderEmit.find('IEST')
+            if iest_node is not None:
+                iest_header = iest_node.text if iest_node.text else ""
+        
+        chave = inf.attrib.get('Id', '')[3:] 
         n_nf = tag_val('nNF', root)
         
-        # BUSCA A IEST (Inscrição de Substituto) NO CABEÇALHO (Grupo enderEmit)
-        iest_cabecalho = tag_val('IEST', enderEmit)
-
         # --- PROCESSAMENTO DOS ITENS (DET) ---
         for det in root.findall('.//det'):
             prod = det.find('prod')
             imp = det.find('imposto')
-            
             if prod is None or imp is None: continue
             
-            # Subgrupos de Impostos
             icms = imp.find('.//ICMS')
             pis = imp.find('.//PIS')
             cofins = imp.find('.//COFINS')
             ipi = imp.find('.//IPI')
             
             # Captura de DIFAL e Partilha (Interestadual)
-            # Busca valores de destino em diferentes possíveis tags da SEFAZ
             v_difal_dest = safe_float(rec_val(imp, ['vICMSUFDest', 'vICMSPart', 'vICMSDIFAL']))
             v_fcp_dest = safe_float(rec_val(imp, ['vFCPUFDest', 'vFCPPart']))
             
-            # Captura a IEST: Tenta no item, se vazio, usa a do cabeçalho do emitente
-            ie_subst_final = rec_val(icms, ['IEST', 'IESTDest'])
-            if not ie_subst_final or ie_subst_final.strip() == "":
-                ie_subst_final = iest_cabecalho
+            # Prioridade para IEST: Tenta no item, se vazio, usa a do cabeçalho (enderEmit)
+            iest_item = rec_val(icms, ['IEST', 'IESTDest'])
+            ie_subst_final = iest_item if iest_item else iest_header
 
-            # Mapeamento Maximalista de Colunas
             linha = {
                 # Identificação
                 "CHAVE_ACESSO": str(chave).strip(),
@@ -148,8 +145,8 @@ def processar_conteudo_xml(content, dados_lista):
                 "VAL-FCP-ST": safe_float(rec_val(imp, ['vFCPST'])),
                 "VAL-FCP": safe_float(rec_val(imp, ['vFCP'])),
                 
-                # Inscrição de Substituto (Sua IEST na UF Destino)
-                "IE_SUBST": ie_subst_final,
+                # --- COLUNA B - IE SUBSTITUTO ---
+                "IE_SUBST": str(ie_subst_final).strip(),
                 
                 # Reforma Tributária (IBS/CBS)
                 "VAL-IBS": safe_float(rec_val(imp, ['vIBS'])),
@@ -160,23 +157,14 @@ def processar_conteudo_xml(content, dados_lista):
             dados_lista.append(linha)
             
     except Exception as e:
-        # Em produção, você pode logar este erro em um arquivo
         pass
 
 # --- GESTÃO DE ARQUIVOS E ZIP ---
 
 def extrair_dados_xml(files):
-    """
-    Gerencia a descompactação de um ou mais arquivos ZIP, 
-    processando todos os XMLs encontrados dentro deles.
-    """
     dados_lista = []
-    if not files:
-        return pd.DataFrame()
-    
-    # Normaliza a entrada para uma lista, permitindo múltiplos uploads
+    if not files: return pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
-        
     for f in lista_trabalho:
         try:
             with zipfile.ZipFile(f) as z:
@@ -185,39 +173,21 @@ def extrair_dados_xml(files):
                         try:
                             with z.open(filename) as xml_file:
                                 processar_conteudo_xml(xml_file.read(), dados_lista)
-                        except:
-                            continue
-        except Exception:
-            continue
-            
+                        except: continue
+        except: continue
     return pd.DataFrame(dados_lista)
 
 # --- GERADOR DO RELATÓRIO FINAL ---
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
-    """
-    Orquestra a criação do arquivo Excel consolidado, chamando cada módulo 
-    especialista de auditoria e formatando o resultado final.
-    """
     output = io.BytesIO()
-    
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        
-        # 1. ABA RESUMO: Manual de Diagnósticos
-        try:
-            gerar_aba_resumo(writer)
-        except:
-            pass
-        
-        # 2 e 3. ABAS GERENCIAIS: Cruzamento com ERP
-        try:
-            gerar_abas_gerenciais(writer, ge, gs)
-        except:
-            pass
+        try: gerar_aba_resumo(writer)
+        except: pass
+        try: gerar_abas_gerenciais(writer, ge, gs)
+        except: pass
 
-        # 4. PROCESSAMENTO DE AUDITORIA (SAÍDAS)
         if not df_xs.empty:
-            # Lógica de Autenticidade (Situação da Nota na SEFAZ)
             st_map = {}
             if as_f:
                 try:
@@ -228,17 +198,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
                             df_auth = pd.read_excel(f_auth, header=None)
                         else:
                             df_auth = pd.read_csv(f_auth, header=None, sep=None, engine='python', on_bad_lines='skip')
-                        
-                        # Limpa chaves de acesso e mapeia status (coluna 5 conforme padrão Sentinela)
                         df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_auth.set_index(0)[5].to_dict())
-                except:
-                    pass
+                except: pass
             
-            # Adiciona Situação da Nota ao DataFrame Principal
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
-            
-            # CHAMADA DOS ESPECIALISTAS DE AUDITORIA
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
@@ -247,9 +211,5 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
 
     return output.getvalue()
 
-def main():
-    """Ponto de entrada para execução direta (debug)."""
-    pass
-
-if __name__ == "__main__":
-    main()
+def main(): pass
+if __name__ == "__main__": main()
