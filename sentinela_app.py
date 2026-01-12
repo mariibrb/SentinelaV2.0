@@ -22,6 +22,7 @@ st.markdown("""
     .passo-container {
         background-color: #FFFFFF; padding: 10px 15px; border-radius: 10px; border-left: 5px solid #FF6F00;
         margin: 10px auto 15px auto; max-width: 600px; text-align: center;
+        font-weight: bold; color: #333;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -51,46 +52,59 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_sentinela.xlsx", use_container_width=True)
 
-# --- FLUXO DE PASSOS ---
+# --- FLUXO DE PASSOS BLOQUEADOS ---
 
+# PASSO 1: EMPRESA
 st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div>", unsafe_allow_html=True)
-cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
+empresas_disponiveis = listar_empresas()
+cod_cliente = st.selectbox("Empresa:", ["-- Selecione a Empresa --"] + empresas_disponiveis, label_visibility="collapsed")
 
-if cod_cliente:
+# Só libera o Passo 2 se o usuário selecionou uma empresa válida
+if cod_cliente and cod_cliente != "-- Selecione a Empresa --":
+    
+    # PASSO 2: REGIME
     st.markdown("<div class='passo-container'>⚖️ PASSO 2: Defina o Regime Tributário</div>", unsafe_allow_html=True)
-    regime = st.selectbox("Regime:", ["Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
+    regime = st.selectbox("Regime:", ["-- Selecione o Regime --", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
 
-    st.markdown("<div class='passo-container'>📥 PASSO 3: Upload dos Arquivos</div>", unsafe_allow_html=True)
-    c_e, c_s = st.columns(2, gap="large")
-    
-    with c_e:
-        st.subheader("📥 ENTRADAS")
-        # Alterado para accept_multiple_files=True
-        xe = st.file_uploader("ZIP Entradas (Múltiplos)", type=['zip'], key="xe_v8", accept_multiple_files=True)
-        ge = st.file_uploader("Gerencial Entrada (Múltiplos)", type=['csv', 'xlsx'], key="ge_v8", accept_multiple_files=True)
-        ae = st.file_uploader("Autenticidade Entrada (Múltiplos)", type=['xlsx', 'csv'], key="ae_v8", accept_multiple_files=True)
-    
-    with c_s:
-        st.subheader("📤 SAÍDAS")
-        # Alterado para accept_multiple_files=True
-        xs = st.file_uploader("ZIP Saídas (Múltiplos)", type=['zip'], key="xs_v8", accept_multiple_files=True)
-        gs = st.file_uploader("Gerencial Saída (Múltiplos)", type=['csv', 'xlsx'], key="gs_v8", accept_multiple_files=True)
-        as_f = st.file_uploader("Autenticidade Saída (Múltiplos)", type=['xlsx', 'csv'], key="as_v8", accept_multiple_files=True)
+    # Só libera o Passo 3 se o regime for selecionado
+    if regime and regime != "-- Selecione o Regime --":
+        
+        # PASSO 3: UPLOADS
+        st.markdown("<div class='passo-container'>📥 PASSO 3: Upload dos Arquivos</div>", unsafe_allow_html=True)
+        c_e, c_s = st.columns(2, gap="large")
+        
+        with c_e:
+            st.subheader("📥 ENTRADAS")
+            xe = st.file_uploader("ZIP Entradas (Múltiplos)", type=['zip'], key="xe_v8", accept_multiple_files=True)
+            ge = st.file_uploader("Gerencial Entrada (Múltiplos)", type=['csv', 'xlsx'], key="ge_v8", accept_multiple_files=True)
+            ae = st.file_uploader("Autenticidade Entrada (Múltiplos)", type=['xlsx', 'csv'], key="ae_v8", accept_multiple_files=True)
+        
+        with c_s:
+            st.subheader("📤 SAÍDAS")
+            xs = st.file_uploader("ZIP Saídas (Múltiplos)", type=['zip'], key="xs_v8", accept_multiple_files=True)
+            gs = st.file_uploader("Gerencial Saída (Múltiplos)", type=['csv', 'xlsx'], key="gs_v8", accept_multiple_files=True)
+            as_f = st.file_uploader("Autenticidade Saída (Múltiplos)", type=['xlsx', 'csv'], key="as_v8", accept_multiple_files=True)
 
-    st.markdown("---")
-    
-    col_btn_1, col_btn_2, col_btn_3 = st.columns([1,2,1])
-    with col_btn_2:
-        if st.button("🚀 GERAR RELATÓRIO"):
-            with st.spinner("🧡 Sentinela está processando..."):
-                try:
-                    # O extrair_dados_xml agora deve estar preparado para receber uma lista no sentinela_core
-                    df_xe = extrair_dados_xml(xe)
-                    df_xs = extrair_dados_xml(xs)
-                    
-                    relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime)
-                    
-                    st.success("Auditoria Concluída! 🧡")
-                    st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}_{regime.replace(' ', '_')}.xlsx", use_container_width=True)
-                except Exception as e: 
-                    st.error(f"Erro Crítico no Motor: {e}")
+        st.markdown("---")
+        
+        col_btn_1, col_btn_2, col_btn_3 = st.columns([1,2,1])
+        with col_btn_2:
+            if st.button("🚀 GERAR RELATÓRIO"):
+                # Trava de segurança: Pelo menos o ZIP de Saída deve existir para auditar
+                if not xs:
+                    st.warning("⚠️ É necessário pelo menos um arquivo de SAÍDA para iniciar.")
+                else:
+                    with st.spinner("🧡 Sentinela está processando..."):
+                        try:
+                            # O motor maximalista agora recebe as listas diretamente
+                            df_xe = extrair_dados_xml(xe)
+                            df_xs = extrair_dados_xml(xs)
+                            
+                            relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime)
+                            
+                            st.success("Auditoria Concluída! 🧡")
+                            st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}_{regime.replace(' ', '_')}.xlsx", use_container_width=True)
+                        except Exception as e: 
+                            st.error(f"Erro Crítico no Motor: {e}")
+else:
+    st.info("Aguardando seleção da empresa para prosseguir...")
