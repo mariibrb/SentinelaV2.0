@@ -2,48 +2,44 @@ import pandas as pd
 
 UFS_BRASIL = ['AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO']
 
-def gerar_resumo_uf(df, writer):
-    if df.empty: return
-    df_temp = df.copy()
-    
-    # 1. Filtro de Notas Autorizadas
-    df_validas = df_temp[df_temp['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)].copy()
-    df_validas['SENTIDO'] = df_validas['CFOP'].apply(lambda x: 'ENTRADA' if str(x)[0] in ['1','2','3'] else 'SAÍDA')
+def gerar_resumo_uf(df_saida, writer, df_entrada=None):
+    # Se não houver entrada, cria um DataFrame vazio com as mesmas colunas para não quebrar a lógica
+    if df_entrada is None or df_entrada.empty:
+        df_entrada = pd.DataFrame(columns=df_saida.columns)
 
     def preparar_tabela(df_origem):
-        # Cria base zerada para todas as UFs
         base = pd.DataFrame({'UF_DEST': UFS_BRASIL})
-        base['IE_SUBST'] = ""
-        for c in ['VAL-ICMS-ST', 'DIFAL_CONSOLIDADO', 'VAL-FCP', 'VAL-FCP-ST']: base[c] = 0.0
-        
-        if df_origem.empty: return base
+        if df_origem.empty:
+            for c in ['VAL-ICMS-ST', 'DIFAL_CONSOLIDADO', 'VAL-FCP', 'VAL-FCP-ST']: base[c] = 0.0
+            base['IE_SUBST'] = ""
+            return base
             
         agrupado = df_origem.groupby(['UF_DEST']).agg({
             'VAL-ICMS-ST': 'sum', 'VAL-DIFAL': 'sum', 'VAL-FCP-DEST': 'sum', 'VAL-FCP': 'sum', 'VAL-FCP-ST': 'sum'
         }).reset_index()
         agrupado['DIFAL_CONSOLIDADO'] = agrupado['VAL-DIFAL'] + agrupado['VAL-FCP-DEST']
         
-        final = pd.merge(base[['UF_DEST']], agrupado, on='UF_DEST', how='left').fillna(0)
+        final = pd.merge(base, agrupado, on='UF_DEST', how='left').fillna(0)
         
-        # Captura IEST (Coluna B)
+        # Mapeia qualquer IE que tenha sido encontrada dinamicamente
         ie_map = df_origem[df_origem['IE_SUBST'] != ""].groupby('UF_DEST')['IE_SUBST'].first().to_dict()
         final['IE_SUBST'] = final['UF_DEST'].map(ie_map).fillna("").astype(str)
         return final[['UF_DEST', 'IE_SUBST', 'VAL-ICMS-ST', 'DIFAL_CONSOLIDADO', 'VAL-FCP', 'VAL-FCP-ST']]
 
-    res_s = preparar_tabela(df_validas[df_validas['SENTIDO'] == 'SAÍDA'])
-    res_e = preparar_tabela(df_validas[df_validas['SENTIDO'] == 'ENTRADA'])
+    # Filtra autorizadas na saída
+    df_s_validas = df_saida[df_saida['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)].copy()
+    if df_s_validas.empty: df_s_validas = df_saida.copy() # Fallback se não houver mapa de autorização
 
-    # 4. Cálculo do Saldo Líquido (Garante a soma da saída mesmo sem entrada)
+    res_s = preparar_tabela(df_s_validas)
+    res_e = preparar_tabela(df_entrada)
+
+    # Cálculo do Saldo (Saída - Entrada)
     res_saldo = pd.DataFrame({'UF': UFS_BRASIL})
     res_saldo['IE_SUBST'] = res_s['IE_SUBST']
-    
-    campos = [('VAL-ICMS-ST', 'ST LÍQUIDO'), ('DIFAL_CONSOLIDADO', 'DIFAL LÍQUIDO'), ('VAL-FCP', 'FCP LÍQUIDO'), ('VAL-FCP-ST', 'FCP-ST LÍQUIDO')]
-    
-    for c_xml, c_fin in campos:
-        # Lógica: Valor Saída - Valor Entrada. Se entrada for 0, o saldo é a saída pura.
+    for c_xml, c_fin in [('VAL-ICMS-ST', 'ST LÍQUIDO'), ('DIFAL_CONSOLIDADO', 'DIFAL LÍQUIDO'), ('VAL-FCP', 'FCP LÍQUIDO'), ('VAL-FCP-ST', 'FCP-ST LÍQUIDO')]:
         res_saldo[c_fin] = res_s[c_xml] - res_e[c_xml]
 
-    # 5. Excel e Formatação
+    # Excel
     workbook = writer.book
     worksheet = workbook.add_worksheet('DIFAL_ST_FECP')
     writer.sheets['DIFAL_ST_FECP'] = worksheet
@@ -71,10 +67,10 @@ def gerar_resumo_uf(df, writer):
                 if c_idx == 1: worksheet.write_string(r_idx + 3, start_c + c_idx, str(val), fmt)
                 else: worksheet.write(r_idx + 3, start_c + c_idx, val, fmt)
         
-        # Totais no rodapé (Agora somam independente de entradas)
+        # Totais Gerais
         worksheet.write(30, start_c, "TOTAL GERAL", f_total)
         worksheet.write(30, start_c + 1, "", f_total)
         for i in range(2, 6):
-            col_idx = start_c + i
-            col_let = chr(65 + col_idx) if col_idx < 26 else f"A{chr(65 + col_idx - 26)}"
-            worksheet.write(30, col_idx, f'=SUM({col_let}4:{col_let}30)', f_total)
+            c_idx = start_c + i
+            col_let = chr(65 + c_idx) if c_idx < 26 else f"A{chr(65 + c_idx - 26)}"
+            worksheet.write(30, c_idx, f'=SUM({col_let}4:{col_let}30)', f_total)
