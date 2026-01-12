@@ -47,7 +47,6 @@ with st.sidebar:
     def criar_gabarito():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # Colunas ajustadas para o novo motor de auditoria
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO_SENTINELA', index=False)
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_sentinela.xlsx", use_container_width=True)
@@ -66,28 +65,29 @@ if cod_cliente:
     
     with c_e:
         st.subheader("📥 ENTRADAS")
-        xe = st.file_uploader("ZIP Entradas", type=['zip'], key="xe_v_master_8")
-        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_master_8")
-        ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_master_8")
+        # Alterado para accept_multiple_files=True
+        xe = st.file_uploader("ZIP Entradas (Múltiplos)", type=['zip'], key="xe_v8", accept_multiple_files=True)
+        ge = st.file_uploader("Gerencial Entrada (Múltiplos)", type=['csv', 'xlsx'], key="ge_v8", accept_multiple_files=True)
+        ae = st.file_uploader("Autenticidade Entrada (Múltiplos)", type=['xlsx', 'csv'], key="ae_v8", accept_multiple_files=True)
     
     with c_s:
         st.subheader("📤 SAÍDAS")
-        xs = st.file_uploader("ZIP Saídas", type=['zip'], key="xs_v_master_8")
-        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_master_8")
-        as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_master_8")
+        # Alterado para accept_multiple_files=True
+        xs = st.file_uploader("ZIP Saídas (Múltiplos)", type=['zip'], key="xs_v8", accept_multiple_files=True)
+        gs = st.file_uploader("Gerencial Saída (Múltiplos)", type=['csv', 'xlsx'], key="gs_v8", accept_multiple_files=True)
+        as_f = st.file_uploader("Autenticidade Saída (Múltiplos)", type=['xlsx', 'csv'], key="as_v8", accept_multiple_files=True)
 
     st.markdown("---")
     
-    # Botão de Processamento centralizado
     col_btn_1, col_btn_2, col_btn_3 = st.columns([1,2,1])
     with col_btn_2:
         if st.button("🚀 GERAR RELATÓRIO MAXIMALISTA"):
             with st.spinner("🧡 Sentinela processando..."):
                 try:
+                    # O extrair_dados_xml agora deve estar preparado para receber uma lista no sentinela_core
                     df_xe = extrair_dados_xml(xe)
                     df_xs = extrair_dados_xml(xs)
                     
-                    # Motor enviando Empresa + Regime
                     relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime)
                     
                     st.success("Auditoria Concluída! 🧡")
