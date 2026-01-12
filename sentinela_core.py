@@ -31,103 +31,80 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML ---
+# --- MOTOR DE PROCESSAMENTO XML (SCANNER TOTAL) ---
 
 def processar_conteudo_xml(content, dados_lista):
     try:
-        # 1. Decodifica e limpa ABSOLUTAMENTE tudo que pareça um Namespace
         xml_str = content.decode('utf-8', errors='replace')
-        xml_str = re.sub(r'xmlns="[^"]+"', '', xml_str)
-        xml_str = re.sub(r'xmlns:xsi="[^"]+"', '', xml_str)
-        xml_str = re.sub(r'xsi:type="[^"]+"', '', xml_str)
-        
+        # Remove qualquer menção a namespace para não travar a busca
+        xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
-        # 2. Helper de busca universal (ignora níveis e namespaces)
-        def find_anywhere(tag_name, node):
-            # Procura a tag em qualquer profundidade a partir do nó fornecido
-            for elem in node.iter():
-                if elem.tag.split('}')[-1] == tag_name:
-                    return elem.text if elem.text else ""
+        # FUNÇÃO SCANNER: Varre o nó em busca da tag, ignore onde ela esteja
+        def scanner(tag_alvo, no):
+            if no is None: return ""
+            for elemento in no.iter():
+                # Pega apenas o nome da tag (ignora o que vem antes do '}')
+                if elemento.tag.split('}')[-1] == tag_alvo:
+                    return elemento.text if elemento.text else ""
             return ""
 
-        # --- CAPTURA DE DADOS DO CABEÇALHO ---
+        # Captura a IEST da nota toda (independente de estar no emitente ou no imposto)
+        iest_da_nota = scanner('IEST', root)
+
         inf = root.find('.//infNFe')
         if inf is None: return 
         
+        chave = inf.attrib.get('Id', '')[3:]
+        n_nf = scanner('nNF', root)
         emit = root.find('.//emit')
         dest = root.find('.//dest')
-        
-        # BUSCA DA IEST NO CABEÇALHO (ENDEREMIT) - BUSCA FORÇADA
-        # Tentamos primeiro dentro do emitente, que é o lugar correto
-        iest_final_nota = find_anywhere('IEST', emit) if emit is not None else ""
-        
-        chave = inf.attrib.get('Id', '')[3:] 
-        n_nf = find_anywhere('nNF', root)
 
-        # --- PROCESSAMENTO DOS ITENS ---
         for det in root.findall('.//det'):
             prod = det.find('prod')
             imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            # Grupos de Impostos
-            icms = imp.find('.//ICMS')
-            pis = imp.find('.//PIS')
-            cofins = imp.find('.//COFINS')
-            ipi = imp.find('.//IPI')
-            
-            # Captura de Valores Interestaduais
-            v_difal_dest = safe_float(find_anywhere('vICMSUFDest', imp))
-            v_fcp_dest = safe_float(find_anywhere('vFCPUFDest', imp))
-            
-            # IEST DO ITEM: Se o sistema destacou no item, prevalece. Se não, usa a da nota.
-            iest_item = find_anywhere('IEST', icms) if icms is not None else ""
-            ie_subst_final = iest_item if iest_item else iest_final_nota
+            # Se o item tiver uma IEST específica, ela manda. Se não, usa a da nota.
+            iest_item = scanner('IEST', det)
+            ie_final = iest_item if iest_item else iest_da_nota
 
             linha = {
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
-                "CNPJ_EMIT": find_anywhere('CNPJ', emit),
-                "CNPJ_DEST": find_anywhere('CNPJ', dest),
-                "CPF_DEST": find_anywhere('CPF', dest),
-                "UF_EMIT": find_anywhere('UF', emit),
-                "UF_DEST": find_anywhere('UF', dest),
-                "indIEDest": find_anywhere('indIEDest', dest),
-                "CFOP": find_anywhere('CFOP', prod),
-                "NCM": re.sub(r'\D', '', find_anywhere('NCM', prod)).zfill(8),
-                "VPROD": safe_float(find_anywhere('vProd', prod)),
+                "CNPJ_EMIT": scanner('CNPJ', emit),
+                "CNPJ_DEST": scanner('CNPJ', dest),
+                "CPF_DEST": scanner('CPF', dest),
+                "UF_EMIT": scanner('UF', emit),
+                "UF_DEST": scanner('UF', dest),
+                "indIEDest": scanner('indIEDest', dest),
+                "CFOP": scanner('CFOP', prod),
+                "NCM": re.sub(r'\D', '', scanner('NCM', prod)).zfill(8),
+                "VPROD": safe_float(scanner('vProd', prod)),
                 
-                # ICMS
-                "ORIGEM": find_anywhere('orig', icms),
-                "CST-ICMS": find_anywhere('CST', icms) or find_anywhere('CSOSN', icms),
-                "BC-ICMS": safe_float(find_anywhere('vBC', icms)),
-                "ALQ-ICMS": safe_float(find_anywhere('pICMS', icms)),
-                "VLR-ICMS": safe_float(find_anywhere('vICMS', icms)),
+                # Impostos (Busca direta pela tag dentro do grupo do item)
+                "ORIGEM": scanner('orig', det),
+                "CST-ICMS": scanner('CST', det) or scanner('CSOSN', det),
+                "BC-ICMS": safe_float(scanner('vBC', det)),
+                "ALQ-ICMS": safe_float(scanner('pICMS', det)),
+                "VLR-ICMS": safe_float(scanner('vICMS', det)),
                 
-                # PIS/COFINS/IPI
-                "CST-PIS": find_anywhere('CST', pis),
-                "VAL-PIS": safe_float(find_anywhere('vPIS', pis)),
-                "CST-COF": find_anywhere('CST', cofins),
-                "VAL-COF": safe_float(find_anywhere('vCOFINS', cofins)),
-                "CST-IPI": find_anywhere('CST', ipi),
-                "ALQ-IPI": safe_float(find_anywhere('pIPI', ipi)),
-                "VAL-IPI": safe_float(find_anywhere('vIPI', ipi)),
+                "CST-PIS": scanner('CST', det.find('.//PIS')) if det.find('.//PIS') is not None else "",
+                "VAL-PIS": safe_float(scanner('vPIS', det)),
+                "CST-COF": scanner('CST', det.find('.//COFINS')) if det.find('.//COFINS') is not None else "",
+                "VAL-COF": safe_float(scanner('vCOFINS', det)),
                 
-                # DIFAL / ST
-                "VAL-DIFAL": v_difal_dest + v_fcp_dest,
-                "VAL-FCP-DEST": v_fcp_dest,
-                "VAL-ICMS-ST": safe_float(find_anywhere('vICMSST', icms)),
-                "BC-ICMS-ST": safe_float(find_anywhere('vBCST', icms)),
-                "VAL-FCP-ST": safe_float(find_anywhere('vFCPST', icms)),
-                "VAL-FCP": safe_float(find_anywhere('vFCP', icms)),
+                "VAL-DIFAL": safe_float(scanner('vICMSUFDest', det)) + safe_float(scanner('vFCPUFDest', det)),
+                "VAL-FCP-DEST": safe_float(scanner('vFCPUFDest', det)),
+                "VAL-ICMS-ST": safe_float(scanner('vICMSST', det)),
+                "VAL-FCP-ST": safe_float(scanner('vFCPST', det)),
+                "VAL-FCP": safe_float(scanner('vFCP', det)),
                 
-                # COLUNA B - IE SUBSTITUTO (IEST)
-                "IE_SUBST": str(ie_subst_final).strip(),
+                # COLUNA B - IE SUBSTITUTO (Pega o que o Scanner achou)
+                "IE_SUBST": str(ie_final).strip(),
                 
-                # Reforma
-                "VAL-IBS": safe_float(find_anywhere('vIBS', imp)),
-                "VAL-CBS": safe_float(find_anywhere('vCBS', imp))
+                "VAL-IBS": safe_float(scanner('vIBS', det)),
+                "VAL-CBS": safe_float(scanner('vCBS', det))
             }
             dados_lista.append(linha)
     except: pass
