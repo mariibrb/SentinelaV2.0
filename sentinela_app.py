@@ -22,7 +22,6 @@ st.markdown("""
     .passo-container {
         background-color: #FFFFFF; padding: 10px 15px; border-radius: 10px; border-left: 5px solid #FF6F00;
         margin: 10px auto 15px auto; max-width: 600px; text-align: center;
-        font-weight: bold; color: #333;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -52,24 +51,19 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_sentinela.xlsx", use_container_width=True)
 
-# --- FLUXO DE PASSOS BLOQUEADOS ---
+# --- FLUXO DE PASSOS ---
 
-# PASSO 1: EMPRESA
 st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div>", unsafe_allow_html=True)
-empresas_disponiveis = listar_empresas()
-cod_cliente = st.selectbox("Empresa:", ["-- Selecione a Empresa --"] + empresas_disponiveis, label_visibility="collapsed")
+cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
-# Só libera o Passo 2 se o usuário selecionou uma empresa válida
-if cod_cliente and cod_cliente != "-- Selecione a Empresa --":
-    
-    # PASSO 2: REGIME
+if cod_cliente:
     st.markdown("<div class='passo-container'>⚖️ PASSO 2: Defina o Regime Tributário</div>", unsafe_allow_html=True)
-    regime = st.selectbox("Regime:", ["-- Selecione o Regime --", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
+    regime = st.selectbox("Regime:", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
+    
+    # FLAG RET (SINALIZADOR)
+    is_ret = st.toggle("🚀 Empresa utiliza RET (Minas Gerais)")
 
-    # Só libera o Passo 3 se o regime for selecionado
-    if regime and regime != "-- Selecione o Regime --":
-        
-        # PASSO 3: UPLOADS
+    if regime:
         st.markdown("<div class='passo-container'>📥 PASSO 3: Upload dos Arquivos</div>", unsafe_allow_html=True)
         c_e, c_s = st.columns(2, gap="large")
         
@@ -90,21 +84,15 @@ if cod_cliente and cod_cliente != "-- Selecione a Empresa --":
         col_btn_1, col_btn_2, col_btn_3 = st.columns([1,2,1])
         with col_btn_2:
             if st.button("🚀 GERAR RELATÓRIO"):
-                # Trava de segurança: Pelo menos o ZIP de Saída deve existir para auditar
-                if not xs:
-                    st.warning("⚠️ É necessário pelo menos um arquivo de SAÍDA para iniciar.")
-                else:
-                    with st.spinner("🧡 Sentinela está processando..."):
-                        try:
-                            # O motor maximalista agora recebe as listas diretamente
-                            df_xe = extrair_dados_xml(xe)
-                            df_xs = extrair_dados_xml(xs)
-                            
-                            relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime)
-                            
-                            st.success("Auditoria Concluída! 🧡")
-                            st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}_{regime.replace(' ', '_')}.xlsx", use_container_width=True)
-                        except Exception as e: 
-                            st.error(f"Erro Crítico no Motor: {e}")
-else:
-    st.info("Aguardando seleção da empresa para prosseguir...")
+                with st.spinner("🧡 Sentinela está processando..."):
+                    try:
+                        df_xe = extrair_dados_xml(xe)
+                        df_xs = extrair_dados_xml(xs)
+                        
+                        # Passando is_ret para o motor
+                        relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
+                        
+                        st.success("Auditoria Concluída! 🧡")
+                        st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}_{regime.replace(' ', '_')}.xlsx", use_container_width=True)
+                    except Exception as e: 
+                        st.error(f"Erro Crítico no Motor: {e}")
