@@ -16,11 +16,12 @@ try:
     from audit_difal import processar_difal
     from apuracao_difal import gerar_resumo_uf
 except ImportError as e:
-    st.error(f"Erro ao importar módulos especialistas: {e}")
+    st.error(f"Erro crítico ao importar módulos especialistas: {e}")
 
 # --- UTILITÁRIOS DE CONVERSÃO ---
 
 def safe_float(v):
+    """Converte valores do XML para float tratando nulos e formatos BR."""
     if v is None or pd.isna(v): return 0.0
     txt = str(v).strip().upper()
     if txt in ['NT', '', 'N/A', 'ISENTO', 'NULL']: return 0.0
@@ -34,81 +35,98 @@ def safe_float(v):
 # --- MOTOR DE PROCESSAMENTO XML ---
 
 def processar_conteudo_xml(content, dados_lista):
+    """Varre o XML em busca de tags fiscais com foco na IEST do emitente."""
     try:
         xml_str = content.decode('utf-8', errors='replace')
+        # Limpeza agressiva de Namespaces para garantir que o find não falhe
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
         def tag_val(t, n):
             if n is None: return ""
-            # Procura pela tag informada ou por IE_SUBST (seu caso específico)
             v = n.find(f'.//{t}')
             return v.text if v is not None and v.text else ""
             
         def rec_val(n, ts):
+            """Busca recursiva para tags de impostos que mudam de nome conforme o CST."""
             if n is None: return ""
             for e in n.iter():
                 tag_name = e.tag.split('}')[-1]
                 if tag_name in ts: return e.text if e.text else ""
             return ""
 
+        # --- CABEÇALHO ---
         inf = root.find('.//infNFe')
         if inf is None: return 
         
         emit = root.find('.//emit')
         dest = root.find('.//dest')
         
-        # --- CAPTURA DA IE SUBSTITUTO (IEST OU IE_SUBST NO EMITENTE) ---
-        # No seu XML está como <IE_SUBST> dentro de <emit>
-        iest_nota = tag_val('IE_SUBST', emit) or tag_val('IEST', emit)
+        # CAPTURA DA IEST (Inscrição de Substituto) - Crucial para o seu caso
+        # Buscamos no emitente (conforme o seu XML de exemplo)
+        iest_nota = tag_val('IEST', emit)
         
         chave = inf.attrib.get('Id', '')[3:]
         n_nf = tag_val('nNF', root)
 
+        # --- PROCESSAMENTO DOS ITENS (det) ---
         for det in root.findall('.//det'):
             prod = det.find('prod')
             imp = det.find('imposto')
             if prod is None or imp is None: continue
             
             icms = imp.find('.//ICMS')
+            pis = imp.find('.//PIS')
+            cofins = imp.find('.//COFINS')
+            ipi = imp.find('.//IPI')
             
-            # Tenta capturar IE específica do item ou a que veio da nota
-            iest_item = rec_val(icms, ['IEST', 'IESTDest', 'IE_SUBST'])
-            ie_final = iest_item if iest_item else iest_nota
+            # Captura de DIFAL e FCP (Interstaduais)
+            v_difal_base = safe_float(rec_val(imp, ['vICMSUFDest', 'vICMSPart', 'vICMSDIFAL']))
+            v_fcp_difal = safe_float(rec_val(imp, ['vFCPUFDest']))
+            
+            # Prioridade para IEST do item, se não houver, usa a do Cabeçalho (IEST da nota)
+            iest_item = rec_val(icms, ['IEST', 'IESTDest'])
+            ie_subst_final = iest_item if iest_item else iest_nota
 
             linha = {
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
                 "CNPJ_EMIT": tag_val('CNPJ', emit),
                 "CNPJ_DEST": tag_val('CNPJ', dest),
-                "UF_EMIT": tag_val('UF', emit),
+                "UF_EMIT": tag_val('UF', emit), 
                 "UF_DEST": tag_val('UF', dest),
                 "CFOP": tag_val('CFOP', prod),
                 "NCM": re.sub(r'\D', '', tag_val('NCM', prod)).zfill(8),
                 "VPROD": safe_float(tag_val('vProd', prod)),
                 
-                # Dados de Imposto
+                # Dados de ICMS
                 "ORIGEM": rec_val(icms, ['orig']),
                 "CST-ICMS": rec_val(icms, ['CST', 'CSOSN']).zfill(2),
                 "BC-ICMS": safe_float(rec_val(imp, ['vBC'])),
                 "ALQ-ICMS": safe_float(rec_val(imp, ['pICMS'])),
                 "VLR-ICMS": safe_float(rec_val(imp, ['vICMS'])),
                 
-                # Valores para Apuração DIFAL
-                "VAL-DIFAL": safe_float(rec_val(imp, ['vICMSUFDest', 'vICMSDIFAL'])),
-                "VAL-FCP-DEST": safe_float(rec_val(imp, ['vFCPUFDest'])),
+                # Dados para Apuração UF (DIFAL / ST / FCP)
+                "VAL-DIFAL": v_difal_base + v_fcp_difal,
+                "VAL-FCP-DEST": v_fcp_difal,
                 "VAL-ICMS-ST": safe_float(rec_val(imp, ['vICMSST'])),
                 "BC-ICMS-ST": safe_float(rec_val(imp, ['vBCST'])),
                 "VAL-FCP-ST": safe_float(rec_val(imp, ['vFCPST'])),
                 "VAL-FCP": safe_float(rec_val(imp, ['vFCP'])),
                 
-                # COLUNA B - IE SUBSTITUTO (IEST)
-                "IE_SUBST": str(ie_final).strip()
+                # --- AQUI ESTÁ A COLUNA B DA SUA ABA ---
+                "IE_SUBST": str(ie_subst_final).strip(),
+                
+                # Reforma Tributária (IBS/CBS)
+                "VAL-IBS": safe_float(rec_val(imp, ['vIBS'])),
+                "VAL-CBS": safe_float(rec_val(imp, ['vCBS']))
             }
             dados_lista.append(linha)
-    except: pass
+    except Exception as e:
+        pass
 
 def extrair_dados_xml(files):
+    """Lida com múltiplos arquivos ZIP e unifica os dados."""
     dados_lista = []
     if not files: return pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
@@ -123,13 +141,12 @@ def extrair_dados_xml(files):
     return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
+    """Gera o arquivo final com todas as auditorias."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        try: gerar_aba_resumo(writer)
-        except: pass
-        try: gerar_abas_gerenciais(writer, ge, gs)
-        except: pass
-
+        gerar_aba_resumo(writer)
+        gerar_abas_gerenciais(writer, ge, gs)
+        
         if not df_xs.empty:
             st_map = {}
             if as_f:
@@ -137,15 +154,18 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
                     f_auth_list = as_f if isinstance(as_f, list) else [as_f]
                     for f_auth in f_auth_list:
                         f_auth.seek(0)
-                        df_auth = pd.read_excel(f_auth, header=None) if f_auth.name.endswith('.xlsx') else pd.read_csv(f_auth, header=None, sep=None, engine='python', on_bad_lines='skip')
+                        df_auth = pd.read_excel(f_auth, header=None) if f_auth.name.endswith('.xlsx') else pd.read_csv(f_auth, header=None, sep=None, engine='python')
                         df_auth[0] = df_auth[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_auth.set_index(0)[5].to_dict())
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
+            
+            # Auditorias Especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
-            gerar_resumo_uf(df_xs, writer)
+            gerar_resumo_uf(df_xs, writer) # Aba da Apuração UF
+
     return output.getvalue()
