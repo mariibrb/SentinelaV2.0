@@ -38,7 +38,7 @@ def gerar_aba_resumo(writer):
         ["• 'Registrar CC-e': Para erros de CST ou NCM que não alteram valores."],
         ["• 'Avaliar Restituição': Quando houve pagamento maior que o legalmente exigido."],
         [""],
-        ["--- Relatório Gerado pelo Motor Maximalista Sentinela ---"]
+        ["--- Relatório Gerado pelo Motor Sentinela ---"]
     ]
 
     # Criando o DataFrame sem cabeçalho e sem índice
