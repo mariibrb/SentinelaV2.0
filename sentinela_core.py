@@ -31,83 +31,79 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML (SCANNER BLINDADO) ---
+# --- MOTOR DE PROCESSAMENTO XML ---
 
 def processar_conteudo_xml(content, dados_lista):
     try:
         xml_str = content.decode('utf-8', errors='replace')
-        # Remove namespaces e limpa o texto
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
-        # FUNÇÃO SCANNER BLINDADO: Ignora maiúsculo/minúsculo e encontra em qualquer lugar
-        def scanner_blindado(tag_alvo, no):
-            if no is None: return ""
-            tag_alvo_upper = tag_alvo.upper().strip()
-            for elemento in no.iter():
-                # Extrai o nome da tag sem o namespace e converte para maiúsculo
-                nome_atual = elemento.tag.split('}')[-1].upper().strip()
-                if nome_atual == tag_alvo_upper:
-                    return str(elemento.text).strip() if elemento.text else ""
+        def tag_val(t, n):
+            if n is None: return ""
+            # Procura pela tag informada ou por IE_SUBST (seu caso específico)
+            v = n.find(f'.//{t}')
+            return v.text if v is not None and v.text else ""
+            
+        def rec_val(n, ts):
+            if n is None: return ""
+            for e in n.iter():
+                tag_name = e.tag.split('}')[-1]
+                if tag_name in ts: return e.text if e.text else ""
             return ""
-
-        # Captura a IEST da nota inteira antes de entrar nos itens
-        # Busca por IEST ou IESTDEST para garantir cobertura total
-        iest_da_nota = scanner_blindado('IEST', root) or scanner_blindado('IESTDEST', root)
 
         inf = root.find('.//infNFe')
         if inf is None: return 
         
-        chave = inf.attrib.get('Id', '')[3:]
-        n_nf = scanner_blindado('nNF', root)
         emit = root.find('.//emit')
         dest = root.find('.//dest')
+        
+        # --- CAPTURA DA IE SUBSTITUTO (IEST OU IE_SUBST NO EMITENTE) ---
+        # No seu XML está como <IE_SUBST> dentro de <emit>
+        iest_nota = tag_val('IE_SUBST', emit) or tag_val('IEST', emit)
+        
+        chave = inf.attrib.get('Id', '')[3:]
+        n_nf = tag_val('nNF', root)
 
         for det in root.findall('.//det'):
             prod = det.find('prod')
             imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            # Se o item tiver uma IEST específica, ela manda. Se não, usa a da nota.
-            iest_item = scanner_blindado('IEST', det) or scanner_blindado('IESTDEST', det)
-            ie_final = iest_item if iest_item != "" else iest_da_nota
+            icms = imp.find('.//ICMS')
+            
+            # Tenta capturar IE específica do item ou a que veio da nota
+            iest_item = rec_val(icms, ['IEST', 'IESTDest', 'IE_SUBST'])
+            ie_final = iest_item if iest_item else iest_nota
 
             linha = {
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
-                "CNPJ_EMIT": scanner_blindado('CNPJ', emit),
-                "CNPJ_DEST": scanner_blindado('CNPJ', dest),
-                "CPF_DEST": scanner_blindado('CPF', dest),
-                "UF_EMIT": scanner_blindado('UF', emit),
-                "UF_DEST": scanner_blindado('UF', dest),
-                "indIEDest": scanner_blindado('indIEDest', dest),
-                "CFOP": scanner_blindado('CFOP', prod),
-                "NCM": re.sub(r'\D', '', scanner_blindado('NCM', prod)).zfill(8),
-                "VPROD": safe_float(scanner_blindado('vProd', prod)),
+                "CNPJ_EMIT": tag_val('CNPJ', emit),
+                "CNPJ_DEST": tag_val('CNPJ', dest),
+                "UF_EMIT": tag_val('UF', emit),
+                "UF_DEST": tag_val('UF', dest),
+                "CFOP": tag_val('CFOP', prod),
+                "NCM": re.sub(r'\D', '', tag_val('NCM', prod)).zfill(8),
+                "VPROD": safe_float(tag_val('vProd', prod)),
                 
-                # Impostos (Busca direta por tag)
-                "ORIGEM": scanner_blindado('orig', det),
-                "CST-ICMS": scanner_blindado('CST', det) or scanner_blindado('CSOSN', det),
-                "BC-ICMS": safe_float(scanner_blindado('vBC', det)),
-                "ALQ-ICMS": safe_float(scanner_blindado('pICMS', det)),
-                "VLR-ICMS": safe_float(scanner_blindado('vICMS', det)),
+                # Dados de Imposto
+                "ORIGEM": rec_val(icms, ['orig']),
+                "CST-ICMS": rec_val(icms, ['CST', 'CSOSN']).zfill(2),
+                "BC-ICMS": safe_float(rec_val(imp, ['vBC'])),
+                "ALQ-ICMS": safe_float(rec_val(imp, ['pICMS'])),
+                "VLR-ICMS": safe_float(rec_val(imp, ['vICMS'])),
                 
-                "CST-PIS": scanner_blindado('CST', det.find('.//PIS')) if det.find('.//PIS') is not None else "",
-                "VAL-PIS": safe_float(scanner_blindado('vPIS', det)),
-                "CST-COF": scanner_blindado('CST', det.find('.//COFINS')) if det.find('.//COFINS') is not None else "",
-                "VAL-COF": safe_float(scanner_blindado('vCOFINS', det)),
+                # Valores para Apuração DIFAL
+                "VAL-DIFAL": safe_float(rec_val(imp, ['vICMSUFDest', 'vICMSDIFAL'])),
+                "VAL-FCP-DEST": safe_float(rec_val(imp, ['vFCPUFDest'])),
+                "VAL-ICMS-ST": safe_float(rec_val(imp, ['vICMSST'])),
+                "BC-ICMS-ST": safe_float(rec_val(imp, ['vBCST'])),
+                "VAL-FCP-ST": safe_float(rec_val(imp, ['vFCPST'])),
+                "VAL-FCP": safe_float(rec_val(imp, ['vFCP'])),
                 
-                "VAL-DIFAL": safe_float(scanner_blindado('vICMSUFDest', det)) + safe_float(scanner_blindado('vFCPUFDest', det)),
-                "VAL-FCP-DEST": safe_float(scanner_blindado('vFCPUFDest', det)),
-                "VAL-ICMS-ST": safe_float(scanner_blindado('vICMSST', det)),
-                "VAL-FCP-ST": safe_float(scanner_blindado('vFCPST', det)),
-                "VAL-FCP": safe_float(scanner_blindado('vFCP', det)),
-                
-                # --- COLUNA B - IE SUBSTITUTO (IEST) ---
-                "IE_SUBST": str(ie_final).strip(),
-                
-                "VAL-IBS": safe_float(scanner_blindado('vIBS', det)),
-                "VAL-CBS": safe_float(scanner_blindado('vCBS', det))
+                # COLUNA B - IE SUBSTITUTO (IEST)
+                "IE_SUBST": str(ie_final).strip()
             }
             dados_lista.append(linha)
     except: pass
@@ -153,6 +149,3 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
             processar_difal(df_xs, writer)
             gerar_resumo_uf(df_xs, writer)
     return output.getvalue()
-
-def main(): pass
-if __name__ == "__main__": main()
