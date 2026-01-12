@@ -3,14 +3,14 @@ import io, zipfile, streamlit as st
 import xml.etree.ElementTree as ET
 import re
 
-# Importação dos Especialistas (Garantindo que todos estão aqui)
+# Importação dos Especialistas (Renomeado o audit_resumo_uf para apuração_difal)
 from audit_resumo import gerar_aba_resumo
 from audit_gerencial import gerar_abas_gerenciais
 from audit_icms import processar_icms
 from audit_ipi import processar_ipi
 from audit_pis_cofins import processar_pc
 from audit_difal import processar_difal
-from audit_resumo_uf import gerar_resumo_uf 
+from apuração_difal import gerar_resumo_uf # <--- Alterado aqui
 
 def safe_float(v):
     if v is None or pd.isna(v) or str(v).strip().upper() in ['NT', '']: return 0.0
@@ -105,7 +105,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
             # --- EXECUÇÃO DAS AUDITORIAS ---
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
-            processar_pc(df_xs, writer, cod_cliente, regime) # Passando o regime selecionado
+            processar_pc(df_xs, writer, cod_cliente, regime) 
             processar_difal(df_xs, writer)
             gerar_resumo_uf(df_xs, writer) 
 
@@ -132,14 +132,16 @@ def main():
         regime = st.selectbox("2. Regime Tributário", 
                              ["Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"])
 
-    # Uploads (Mantendo sua lógica original)
+    # Uploads
     c1, c2 = st.columns(2)
     with c1:
         f_xs = st.file_uploader("ZIP de Saídas (XML)", type="zip")
         as_f = st.file_uploader("Relatório de Autenticidade (Saídas)", type=['csv', 'xlsx'])
     with c2:
         f_xe = st.file_uploader("ZIP de Entradas (XML)", type="zip")
-        # ge/gs/ae... campos de gerenciais se você usar
+        ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'])
+        ae = st.file_uploader("Autenticidade Entrada", type=['csv', 'xlsx'])
+        gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'])
 
     if st.button("🚀 Iniciar Auditoria Completa"):
         if cod_cliente == "0":
@@ -148,8 +150,8 @@ def main():
             df_xs = extrair_dados_xml(f_xs)
             df_xe = extrair_dados_xml(f_xe) if f_xe else pd.DataFrame()
             
-            # ge/gs/ae aqui seriam os outros arquivos se você os tiver carregado
-            excel = gerar_excel_final(None, df_xs, None, as_f, None, None, cod_cliente, regime)
+            # Chamada enviando todos os arquivos capturados
+            excel = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime)
             
             st.download_button(f"📥 Baixar Auditoria - {nome_empresa}", excel, 
                              file_name=f"Auditoria_{cod_cliente}.xlsx")
