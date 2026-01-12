@@ -58,11 +58,12 @@ st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
-    # AQUI ESTÁ A FLAG COM A BANDEIRA ANTES DO PASSO 2
+    # FLAG RET - COM FORMATO DE BANDEIRA (RECORTE BRANCO + TRIÂNGULO) ANTES DO PASSO 2
     st.write("") 
     col_ret, _ = st.columns([1, 1])
     with col_ret:
-        is_ret = st.toggle("🔺 Empresa utiliza RET (Minas Gerais)")
+        # A combinação [🏳️🔺] simula o retângulo branco com o triângulo vermelho centralizado
+        is_ret = st.toggle("🏳️🔺 Regime Especial RET (Minas Gerais)")
 
     # PASSO 2
     st.markdown("<div class='passo-container'>⚖️ PASSO 2: Defina o Regime Tributário</div>", unsafe_allow_html=True)
