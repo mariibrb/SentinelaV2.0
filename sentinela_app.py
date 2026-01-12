@@ -53,17 +53,23 @@ with st.sidebar:
 
 # --- FLUXO DE PASSOS ---
 
+# PASSO 1
 st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div>", unsafe_allow_html=True)
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
+    # AQUI ESTÁ A FLAG COM A BANDEIRA ANTES DO PASSO 2
+    st.write("") 
+    col_ret, _ = st.columns([1, 1])
+    with col_ret:
+        is_ret = st.toggle("🔺 Empresa utiliza RET (Minas Gerais)")
+
+    # PASSO 2
     st.markdown("<div class='passo-container'>⚖️ PASSO 2: Defina o Regime Tributário</div>", unsafe_allow_html=True)
     regime = st.selectbox("Regime:", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
-    
-    # FLAG RET (SINALIZADOR)
-    is_ret = st.toggle("🚀 Empresa utiliza RET (Minas Gerais)")
 
     if regime:
+        # PASSO 3
         st.markdown("<div class='passo-container'>📥 PASSO 3: Upload dos Arquivos</div>", unsafe_allow_html=True)
         c_e, c_s = st.columns(2, gap="large")
         
@@ -89,7 +95,7 @@ if cod_cliente:
                         df_xe = extrair_dados_xml(xe)
                         df_xs = extrair_dados_xml(xs)
                         
-                        # Passando is_ret para o motor
+                        # Chamada do motor enviando o flag is_ret
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         
                         st.success("Auditoria Concluída! 🧡")
