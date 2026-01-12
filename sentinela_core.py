@@ -47,18 +47,19 @@ def processar_conteudo_xml(content, dados_lista):
     """
     try:
         xml_str = content.decode('utf-8', errors='replace')
+        # Limpeza total de Namespaces para garantir a localização das tags
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
         def buscar_tag_recursiva(tag_alvo, no):
-            """Busca a tag em qualquer profundidade do nó."""
+            """Busca a tag em qualquer profundidade do nó para garantir captura."""
             if no is None: return ""
             for elemento in no.iter():
                 if elemento.tag.split('}')[-1] == tag_alvo:
                     return elemento.text if elemento.text else ""
             return ""
 
-        # Captura IEST Global (Emitente) - Onde está o seu número 813032863112
+        # CAPTURA GLOBAL DA IEST (AQUI PEGA O SEU NÚMERO 813032863112)
         iest_global = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
 
         inf = root.find('.//infNFe')
@@ -77,11 +78,11 @@ def processar_conteudo_xml(content, dados_lista):
             
             icms = imp.find('.//ICMS')
             
-            # Captura de DIFAL e FCP (vICMSUFDest + vFCPUFDest)
+            # Captura DIFAL/FCP Destino
             v_difal_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
             v_fcp_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
             
-            # Herança da IEST
+            # Prioridade IEST: Item -> Cabeçalho
             iest_item = buscar_tag_recursiva('IEST', icms)
             ie_final = iest_item if iest_item != "" else iest_global
 
