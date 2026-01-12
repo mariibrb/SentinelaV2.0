@@ -81,8 +81,8 @@ if cod_cliente:
     
     col_btn_1, col_btn_2, col_btn_3 = st.columns([1,2,1])
     with col_btn_2:
-        if st.button("🚀 GERAR RELATÓRIO MAXIMALISTA"):
-            with st.spinner("🧡 Sentinela processando..."):
+        if st.button("🚀 GERAR RELATÓRIO"):
+            with st.spinner("🧡 Sentinela está processando..."):
                 try:
                     # O extrair_dados_xml agora deve estar preparado para receber uma lista no sentinela_core
                     df_xe = extrair_dados_xml(xe)
