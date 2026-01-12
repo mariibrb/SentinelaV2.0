@@ -101,11 +101,9 @@ def extrair_dados_xml(files):
     
     for f in lista_trabalho:
         try:
-            # Se for XML avulso
             if f.name.lower().endswith('.xml'):
                 f.seek(0)
                 processar_conteudo_xml(f.read(), dados_lista)
-            # Se for ZIP
             elif f.name.lower().endswith('.zip'):
                 f.seek(0)
                 with zipfile.ZipFile(f) as z:
@@ -117,37 +115,50 @@ def extrair_dados_xml(files):
     return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
-    """Função principal com suporte a 9 argumentos e Módulo RET"""
+    """
+    Função principal: Coordena a leitura dos arquivos e a execução dos módulos.
+    """
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        
+        # 1. Geração da Aba de Resumo Inicial
         try: gerar_aba_resumo(writer)
         except: pass
         
-        try: gerar_abas_gerenciais(writer, ge, gs)
-        except: pass
+        # 2. Processamento das Gerenciais (Onde os títulos de coluna são validados)
+        # O Core passa os arquivos 'ge' e 'gs' para o especialista gerencial tratar
+        try: 
+            gerar_abas_gerenciais(writer, ge, gs)
+        except Exception as e:
+            st.error(f"Erro no Processamento Gerencial: {e}")
         
-        # MÓDULO MINAS GERAIS (RET)
+        # 3. MÓDULO MINAS GERAIS (Só executa se flag is_ret estiver ativa)
         if is_ret:
             try:
-                # Chama o motor_ret.py para criar as abas MAPA_RET e ENTRADAS_AC
+                # O motor_ret lerá os arquivos e cruzará com os XMLs já processados
                 executar_motor_ret(writer, df_xs, df_xe, ge, gs, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
 
+        # 4. Processamento das Auditorias de Saída (Baseado nos XMLs)
         if not df_xs.empty:
             st_map = {}
             if as_f:
                 try:
                     for f in (as_f if isinstance(as_f, list) else [as_f]):
                         f.seek(0)
-                        df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
+                        if f.name.endswith('.xlsx'):
+                            df_a = pd.read_excel(f, header=None)
+                        else:
+                            df_a = pd.read_csv(f, header=None, sep=None, engine='python')
+                        
                         df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Auditorias Padrão
+            # Execução das Auditorias Especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
