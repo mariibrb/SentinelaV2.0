@@ -47,33 +47,50 @@ with st.sidebar:
     def criar_gabarito():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            pd.DataFrame(columns=["NCM", "CST (INTERNA)", "ALIQ (INTERNA)", "CST (ESTADUAL)"]).to_excel(writer, sheet_name='ICMS', index=False)
-            pd.DataFrame(columns=["NCM", "CST Entrada", "CST Saída"]).to_excel(writer, sheet_name='PIS_COFINS', index=False)
+            # Colunas ajustadas para o novo motor de auditoria
+            pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO_SENTINELA', index=False)
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito", criar_gabarito(), "gabarito_sentinela.xlsx", use_container_width=True)
+
+# --- FLUXO DE PASSOS ---
 
 st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div>", unsafe_allow_html=True)
 cod_cliente = st.selectbox("Empresa:", [""] + listar_empresas(), label_visibility="collapsed")
 
 if cod_cliente:
-    st.markdown("<div class='passo-container'>PASSO 2: Carregar ZIP e Planilhas</div>", unsafe_allow_html=True)
+    st.markdown("<div class='passo-container'>⚖️ PASSO 2: Defina o Regime Tributário</div>", unsafe_allow_html=True)
+    regime = st.selectbox("Regime:", ["Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
+
+    st.markdown("<div class='passo-container'>📥 PASSO 3: Upload dos Arquivos</div>", unsafe_allow_html=True)
     c_e, c_s = st.columns(2, gap="large")
+    
     with c_e:
         st.subheader("📥 ENTRADAS")
         xe = st.file_uploader("ZIP Entradas", type=['zip'], key="xe_v_master_8")
         ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], key="ge_v_master_8")
         ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], key="ae_v_master_8")
+    
     with c_s:
         st.subheader("📤 SAÍDAS")
         xs = st.file_uploader("ZIP Saídas", type=['zip'], key="xs_v_master_8")
         gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], key="gs_v_master_8")
         as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], key="as_v_master_8")
 
-    if st.button("🚀 GERAR RELATÓRIO"):
-        with st.spinner("🧡 Sentinela processando o motor maximalista..."):
-            try:
-                df_xe = extrair_dados_xml(xe); df_xs = extrair_dados_xml(xs)
-                relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente)
-                st.success("Auditoria Concluída! 🧡")
-                st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
-            except Exception as e: st.error(f"Erro Crítico: {e}")
+    st.markdown("---")
+    
+    # Botão de Processamento centralizado
+    col_btn_1, col_btn_2, col_btn_3 = st.columns([1,2,1])
+    with col_btn_2:
+        if st.button("🚀 GERAR RELATÓRIO MAXIMALISTA"):
+            with st.spinner("🧡 Sentinela processando..."):
+                try:
+                    df_xe = extrair_dados_xml(xe)
+                    df_xs = extrair_dados_xml(xs)
+                    
+                    # Motor enviando Empresa + Regime
+                    relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime)
+                    
+                    st.success("Auditoria Concluída! 🧡")
+                    st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}_{regime.replace(' ', '_')}.xlsx", use_container_width=True)
+                except Exception as e: 
+                    st.error(f"Erro Crítico no Motor: {e}")
