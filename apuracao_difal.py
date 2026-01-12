@@ -7,13 +7,13 @@ def gerar_resumo_uf(df, writer):
     
     df_temp = df.copy()
     
-    # 1. Filtro: Somente notas autorizadas e não canceladas
+    # 1. Filtro rigoroso: Somente notas autorizadas e não canceladas
     df_validas = df_temp[
         (df_temp['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)) &
         (~df_temp['Situação Nota'].astype(str).str.upper().str.contains('CANCEL', na=False))
     ].copy()
 
-    # 2. Identificação de Sentido
+    # 2. Identificação de Sentido pelo CFOP
     def identificar_sentido(cfop):
         c = str(cfop).strip()[0]
         if c in ['1', '2', '3']: return 'ENTRADA'
@@ -22,7 +22,7 @@ def gerar_resumo_uf(df, writer):
     
     df_validas['SENTIDO'] = df_validas['CFOP'].apply(identificar_sentido)
 
-    # 3. Preparação das Tabelas (Saída e Entrada)
+    # 3. Preparação das Tabelas
     def preparar_tabela(df_origem):
         agrupado = df_origem.groupby(['UF_DEST']).agg({
             'VAL-ICMS-ST': 'sum', 
@@ -32,13 +32,12 @@ def gerar_resumo_uf(df, writer):
             'VAL-FCP-ST': 'sum'
         }).reset_index()
         
-        # Consolida DIFAL + FCP Destino conforme legislação
         agrupado['DIFAL_CONSOLIDADO'] = agrupado['VAL-DIFAL'] + agrupado['VAL-FCP-DEST']
         
         base = pd.DataFrame({'UF_DEST': UFS_BRASIL})
         final = pd.merge(base, agrupado, on='UF_DEST', how='left').fillna(0)
         
-        # Captura Dinâmica da IE de Substituto (lendo a tag IE_SUBST do XML)
+        # Captura Dinâmica da IE de Substituto na UF
         ie_map = df_origem[df_origem['IE_SUBST'] != ""].groupby('UF_DEST')['IE_SUBST'].first().to_dict()
         final['IE_SUBST'] = final['UF_DEST'].map(ie_map).fillna("")
         
@@ -47,7 +46,7 @@ def gerar_resumo_uf(df, writer):
     res_s = preparar_tabela(df_validas[df_validas['SENTIDO'] == 'SAÍDA'])
     res_e = preparar_tabela(df_validas[df_validas['SENTIDO'] == 'ENTRADA'])
 
-    # 4. Cálculo do Saldo Líquido (REGRA: Só abate se tiver IE)
+    # 4. Cálculo do Saldo (Só abate se tiver IE na Saída)
     res_saldo = pd.DataFrame({'UF': UFS_BRASIL})
     res_saldo['IE_SUBST'] = res_s['IE_SUBST']
     
@@ -57,50 +56,45 @@ def gerar_resumo_uf(df, writer):
     ]
     
     for c_xml, c_fin in cols_calc:
-        def calcular_liquido(uf):
-            saida = res_s.loc[res_s['UF_DEST'] == uf, c_xml].values[0]
-            entrada = res_e.loc[res_e['UF_DEST'] == uf, c_xml].values[0]
-            ie = res_s.loc[res_s['UF_DEST'] == uf, 'IE_SUBST'].values[0]
-            
-            # SE TEM IE: Abate (Saída - Entrada)
-            # SE NÃO TEM IE: Apenas Saída (Ignora Entrada)
-            return (saida - entrada) if ie != "" else saida
+        res_saldo[c_fin] = res_saldo['UF'].apply(
+            lambda x: (res_s.loc[res_s['UF_DEST']==x, c_xml].values[0] - res_e.loc[res_e['UF_DEST']==x, c_xml].values[0])
+            if res_s.loc[res_s['UF_DEST']==x, 'IE_SUBST'].values[0] != "" else res_s.loc[res_s['UF_DEST']==x, c_xml].values[0]
+        )
 
-        res_saldo[c_fin] = res_saldo['UF'].apply(calcular_liquido)
-
-    # 5. Configuração do Excel (Layout e Estilo)
+    # 5. Gravação e Formatação Excel (XlsxWriter)
     workbook = writer.book
     worksheet = workbook.add_worksheet('DIFAL_ST_FECP')
     writer.sheets['DIFAL_ST_FECP'] = worksheet
     worksheet.hide_gridlines(2)
 
     # Formatos
-    title_fmt = workbook.add_format({'bold': True, 'align': 'center', 'font_color': '#FF6F00', 'font_size': 12})
+    title_fmt = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'font_color': '#FF6F00', 'font_size': 12, 'border': 1})
     header_fmt = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E0E0E0', 'align': 'center'})
     num_fmt = workbook.add_format({'num_format': '#,##0.00', 'border': 1})
     border_fmt = workbook.add_format({'border': 1})
     
-    # Destaque Laranja Dinâmico
+    # Formatos Dinâmicos de Laranja (Para quem tem IE)
     orange_fill = workbook.add_format({'bg_color': '#FFDAB9', 'border': 1})
     orange_num = workbook.add_format({'bg_color': '#FFDAB9', 'border': 1, 'num_format': '#,##0.00'})
     
     total_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'num_format': '#,##0.00'})
 
-    # Títulos e Cabeçalhos
-    heads_v = ['UF', 'IE SUBST', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
-    heads_l = ['UF', 'IE SUBST', 'ST LÍQUIDO', 'DIFAL LÍQUIDO', 'FCP LÍQUIDO', 'FCP-ST LÍQUIDO']
+    # Cabeçalhos
+    h_v = ['UF', 'IE SUBST', 'ST TOTAL', 'DIFAL TOTAL', 'FCP TOTAL', 'FCP-ST TOTAL']
+    h_l = ['UF', 'IE SUBST', 'ST LÍQUIDO', 'DIFAL LÍQUIDO', 'FCP LÍQUIDO', 'FCP-ST LÍQUIDO']
 
-    for df_t, start_c, title, h_list in [(res_s, 0, "1. SAÍDAS", heads_v), (res_e, 7, "2. ENTRADAS", heads_v), (res_saldo, 14, "3. SALDO", heads_l)]:
-        # Títulos Mesclados
+    for df_t, start_c, title, heads in [(res_s, 0, "1. SAÍDAS", h_v), (res_e, 7, "2. ENTRADAS", h_v), (res_saldo, 14, "3. SALDO", h_l)]:
+        # MESCLAR TÍTULOS (Passo solicitado)
         worksheet.merge_range(0, start_c, 0, start_c + 5, title, title_fmt)
         
-        for i, h in enumerate(h_list):
+        # Cabeçalhos das Colunas
+        for i, h in enumerate(heads):
             worksheet.write(2, start_c + i, h, header_fmt)
         
-        # Preenchimento de Dados
+        # Preenchimento de Dados com Cor Dinâmica (Passo solicitado)
         for r_idx, row in enumerate(df_t.values):
             uf = str(row[0]).strip()
-            # Condição de cor: se a UF tem Inscrição de Substituto na tabela de Saída
+            # Pinta se houver IE na aba de Saídas para aquela UF
             tem_ie = res_s.loc[res_s['UF_DEST'] == uf, 'IE_SUBST'].values[0] != ""
             
             for c_idx, val in enumerate(row):
@@ -114,5 +108,5 @@ def gerar_resumo_uf(df, writer):
         worksheet.write(30, start_c, "TOTAL GERAL", total_fmt)
         worksheet.write(30, start_c + 1, "", total_fmt)
         for i in range(2, 6):
-            col_let = chr(65 + start_c + i) if (start_c + i) < 26 else f"A{chr(65 + start_c + i - 26)}"
-            worksheet.write(30, start_c + i, f'=SUM({col_let}4:{col_let}30)', total_fmt)
+            let = chr(65 + start_c + i) if (start_c + i) < 26 else f"A{chr(65 + start_c + i - 26)}"
+            worksheet.write(30, start_c + i, f'=SUM({let}4:{let}30)', total_fmt)
