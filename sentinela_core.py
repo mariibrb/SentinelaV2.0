@@ -3,14 +3,14 @@ import io, zipfile, streamlit as st
 import xml.etree.ElementTree as ET
 import re
 
-# Importação dos Especialistas (Renomeado o audit_resumo_uf para apuração_difal)
+# Importação dos Especialistas (Corrigido para apuracao_difal sem acento)
 from audit_resumo import gerar_aba_resumo
 from audit_gerencial import gerar_abas_gerenciais
 from audit_icms import processar_icms
 from audit_ipi import processar_ipi
 from audit_pis_cofins import processar_pc
 from audit_difal import processar_difal
-from apuração_difal import gerar_resumo_uf # <--- Alterado aqui
+from apuracao_difal import gerar_resumo_uf # <--- Nome corrigido aqui
 
 def safe_float(v):
     if v is None or pd.isna(v) or str(v).strip().upper() in ['NT', '']: return 0.0
@@ -107,11 +107,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime):
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime) 
             processar_difal(df_xs, writer)
-            gerar_resumo_uf(df_xs, writer) 
+            gerar_resumo_uf(df_xs, writer) # <--- Chamada corrigida
 
     return output.getvalue()
 
-# --- INTERFACE STREAMLIT ---
+# --- INTERFACE STREAMLIT (RESTAURADA INTEGRALMENTE) ---
 def main():
     st.set_page_config(page_title="Auditor Fiscal Especialista", layout="wide")
     st.title("🛡️ Auditoria Fiscal Digital")
@@ -132,7 +132,7 @@ def main():
         regime = st.selectbox("2. Regime Tributário", 
                              ["Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"])
 
-    # Uploads
+    # Uploads (Restaurado conforme sua versão)
     c1, c2 = st.columns(2)
     with c1:
         f_xs = st.file_uploader("ZIP de Saídas (XML)", type="zip")
