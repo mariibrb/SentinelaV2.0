@@ -19,10 +19,10 @@ try:
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
 
-# --- UTILITÁRIOS DE CONVERSÃO E SEGURANÇA ---
+# --- UTILITÁRIOS DE CONVERSÃO MAXIMALISTA ---
 
 def safe_float(v):
-    """Converte valores do XML para float com alta tolerância a erros de formatação."""
+    """Converte valores do XML para float com alta tolerância e precisão fiscal."""
     if v is None or pd.isna(v):
         return 0.0
     txt = str(v).strip().upper()
@@ -38,39 +38,36 @@ def safe_float(v):
     except (ValueError, TypeError):
         return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML MAXIMALISTA ---
+# --- MOTOR DE PROCESSAMENTO XML ---
 
 def processar_conteudo_xml(content, dados_lista):
     """
     Analisa o XML removendo namespaces e mapeando todas as tags fiscais.
-    Extrai a IEST (813032863112) de qualquer lugar do arquivo onde ela apareça.
+    Varre o arquivo recursivamente para encontrar a IEST no cabeçalho ou itens.
     """
     try:
         xml_str = content.decode('utf-8', errors='replace')
-        # Limpeza total de Namespaces para garantir a localização das tags
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
-        # FUNÇÃO DE BUSCA RECURSIVA (O SEGREDO PARA A COLUNA B)
-        def buscar_em_todo_lugar(tag_alvo, no):
+        def buscar_tag_recursiva(tag_alvo, no):
+            """Busca a tag em qualquer profundidade do nó."""
             if no is None: return ""
             for elemento in no.iter():
-                # Compara apenas o nome final da tag, ignorando namespaces
                 if elemento.tag.split('}')[-1] == tag_alvo:
                     return elemento.text if elemento.text else ""
             return ""
 
-        # Captura a IEST logo na entrada (seja no emitente ou no endereço)
-        iest_global = buscar_em_todo_lugar('IEST', root) or buscar_em_todo_lugar('IESTDest', root)
+        # Captura IEST Global (Emitente) - Onde está o seu número 813032863112
+        iest_global = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
 
         inf = root.find('.//infNFe')
         if inf is None: return 
         
         emit = root.find('.//emit')
         dest = root.find('.//dest')
-        
         chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
-        n_nf = buscar_em_todo_lugar('nNF', root)
+        n_nf = buscar_tag_recursiva('nNF', root)
 
         # Iteração sobre os Itens (det)
         for det in root.findall('.//det'):
@@ -78,48 +75,47 @@ def processar_conteudo_xml(content, dados_lista):
             imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            # Subgrupos de Impostos
             icms = imp.find('.//ICMS')
             
-            # Captura de DIFAL e FCP Interestadual
-            v_difal_base = safe_float(buscar_em_todo_lugar('vICMSUFDest', imp))
-            v_fcp_difal = safe_float(buscar_em_todo_lugar('vFCPUFDest', imp))
+            # Captura de DIFAL e FCP (vICMSUFDest + vFCPUFDest)
+            v_difal_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
+            v_fcp_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
             
-            # IEST do item ou a Global da Nota
-            iest_item = buscar_em_todo_lugar('IEST', icms)
-            ie_subst_final = iest_item if iest_item != "" else iest_global
+            # Herança da IEST
+            iest_item = buscar_tag_recursiva('IEST', icms)
+            ie_final = iest_item if iest_item != "" else iest_global
 
             linha = {
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
-                "CNPJ_EMIT": buscar_em_todo_lugar('CNPJ', emit),
-                "CNPJ_DEST": buscar_em_todo_lugar('CNPJ', dest),
-                "UF_EMIT": buscar_em_todo_lugar('UF', emit),
-                "UF_DEST": buscar_em_todo_lugar('UF', dest),
-                "CFOP": buscar_em_todo_lugar('CFOP', prod),
-                "NCM": re.sub(r'\D', '', buscar_em_todo_lugar('NCM', prod)).zfill(8),
-                "VPROD": safe_float(buscar_em_todo_lugar('vProd', prod)),
+                "CNPJ_EMIT": buscar_tag_recursiva('CNPJ', emit),
+                "CNPJ_DEST": buscar_tag_recursiva('CNPJ', dest),
+                "UF_EMIT": buscar_tag_recursiva('UF', emit),
+                "UF_DEST": buscar_tag_recursiva('UF', dest),
+                "CFOP": buscar_tag_recursiva('CFOP', prod),
+                "NCM": re.sub(r'\D', '', buscar_tag_recursiva('NCM', prod)).zfill(8),
+                "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
                 
-                "ORIGEM": buscar_em_todo_lugar('orig', icms),
-                "CST-ICMS": buscar_em_todo_lugar('CST', icms) or buscar_em_todo_lugar('CSOSN', icms),
-                "BC-ICMS": safe_float(buscar_em_todo_lugar('vBC', icms)),
-                "ALQ-ICMS": safe_float(buscar_em_todo_lugar('pICMS', icms)),
-                "VLR-ICMS": safe_float(buscar_em_todo_lugar('vICMS', icms)),
+                "ORIGEM": buscar_tag_recursiva('orig', icms),
+                "CST-ICMS": buscar_tag_recursiva('CST', icms) or buscar_tag_recursiva('CSOSN', icms),
+                "BC-ICMS": safe_float(buscar_tag_recursiva('vBC', icms)),
+                "ALQ-ICMS": safe_float(buscar_tag_recursiva('pICMS', icms)),
+                "VLR-ICMS": safe_float(buscar_tag_recursiva('vICMS', icms)),
                 
-                # DIFAL / ST / FCP
-                "VAL-DIFAL": v_difal_base + v_fcp_difal,
-                "VAL-FCP-DEST": v_fcp_difal,
-                "VAL-ICMS-ST": safe_float(buscar_em_todo_lugar('vICMSST', imp)),
-                "BC-ICMS-ST": safe_float(buscar_em_todo_lugar('vBCST', imp)),
-                "VAL-FCP-ST": safe_float(buscar_em_todo_lugar('vFCPST', imp)),
-                "VAL-FCP": safe_float(buscar_em_todo_lugar('vFCP', imp)),
+                # Campos de Apuração UF
+                "VAL-DIFAL": v_difal_dest + v_fcp_dest,
+                "VAL-FCP-DEST": v_fcp_dest,
+                "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', imp)),
+                "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', imp)),
+                "VAL-FCP-ST": safe_float(buscar_tag_recursiva('vFCPST', imp)),
+                "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
                 
-                # --- COLUNA B: IE SUBSTITUTO (813032863112) ---
-                "IE_SUBST": str(ie_subst_final).strip(),
+                # --- COLUNA B (IEST) ---
+                "IE_SUBST": str(ie_final).strip(),
                 
                 # Reforma Tributária
-                "VAL-IBS": safe_float(buscar_em_todo_lugar('vIBS', imp)),
-                "VAL-CBS": safe_float(buscar_em_todo_lugar('vCBS', imp))
+                "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
+                "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp))
             }
             dados_lista.append(linha)
             
