@@ -24,15 +24,11 @@ def processar_icms(df, writer, cod_cliente):
         vlr_icms_xml = float(r.get('VLR-ICMS', 0.0))
         bc_icms_xml = float(r.get('BC-ICMS', 0.0))
         vprod = float(r.get('VPROD', 0.0))
-        
-        # Dados de ST
         vlr_st_xml = float(r.get('VAL-ICMS-ST', 0.0))
-        bc_st_xml = float(r.get('BC-ICMS-ST', 0.0))
 
-        # --- Gabarito e Regras ---
+        # --- Gabarito e Regras de Esperado ---
         alq_esp = 18.0
         cst_esp = "00"
-        mva_esp = 0.0
         
         # Regra Interestadual (4%, 7%, 12%)
         if uf_orig != uf_dest:
@@ -46,50 +42,59 @@ def processar_icms(df, writer, cod_cliente):
             g = base_gabarito[base_gabarito['NCM'] == ncm].iloc[0]
             if 'CST_ESPERADA' in base_gabarito.columns: cst_esp = str(g['CST_ESPERADA']).zfill(2)
             if 'ALQ_INTER' in base_gabarito.columns and uf_orig != uf_dest: alq_esp = float(g['ALQ_INTER'])
-            if 'MVA' in base_gabarito.columns: mva_esp = float(g['MVA'])
 
-        # --- ANALISE ICMS PRÓPRIO ---
+        # --- DIAGNÓSTICOS CONDICIONAIS (LIMPOS) ---
+        
+        # 1. Alíquota: Se OK mostra ✅ OK. Se Erro, mostra (XML vs Esp)
+        if abs(alq_xml - alq_esp) < 0.01:
+            diag_alq = "✅ OK"
+        else:
+            diag_alq = f"❌ Erro (XML: {alq_xml}% | Esp: {alq_esp}%)"
+
+        # 2. CST: Se OK mostra ✅ OK. Se Erro, mostra (XML vs Esp)
+        if cst_xml == cst_esp:
+            diag_cst = "✅ OK"
+        else:
+            diag_cst = f"❌ Divergente (XML: {cst_xml} | Esp: {cst_esp})"
+
+        # 3. Status Destaque
         status_destaque = "✅ OK"
         if cst_xml in ['00', '10', '20', '70'] and vlr_icms_xml <= 0: status_destaque = "❌ Falta Destaque"
         elif cst_xml in ['40', '41', '50'] and vlr_icms_xml > 0: status_destaque = "⚠️ Destaque Indevido"
 
-        diag_alq = "✅ OK" if abs(alq_xml - alq_esp) < 0.01 else f"❌ Erro (Esp: {alq_esp}%)"
-        diag_cst = "✅ OK" if cst_xml == cst_esp else f"❌ Divergente (Esp: {cst_esp})"
-        
-        # Auditoria de Base (Redução ou Integral)
+        # 4. Status da Base de Cálculo
         status_base = "✅ Integral" if abs(bc_icms_xml - vprod) < 0.10 else "⚠️ Reduzida/Diferente"
 
-        # --- ANALISE ICMS ST ---
+        # 5. ICMS ST
         diag_st = "✅ OK"
         if cst_xml in ['10', '30', '70', '90'] and vlr_st_xml <= 0:
             diag_st = "❌ ST não retido"
         elif cst_xml == '60' and uf_orig != uf_dest:
             diag_st = "⚠️ Requer nova retenção"
 
-        # --- AÇÃO CORRETIVA E FUNDAMENTAÇÃO ---
+        # --- AÇÃO CORRETIVA ---
         acao = "Nenhuma"
         motivo = "Imposto em conformidade."
 
-        if status_destaque == "❌ Falta Destaque" or alq_xml < alq_esp:
+        if "❌" in diag_alq or status_destaque == "❌ Falta Destaque":
             acao = "Emitir NF Complementar"
-            motivo = "Diferença de imposto a menor identificada."
+            motivo = "Diferença de imposto identificado a menor."
         elif alq_xml > alq_esp:
             acao = "Procedimento de Estorno"
-            motivo = "Alíquota aplicada maior que o previsto na legislação."
-        elif diag_cst != "✅ OK":
+            motivo = "Alíquota aplicada maior que o previsto."
+        elif "❌" in diag_cst:
             acao = "Registrar CC-e"
             motivo = "Correção de CST sem alteração de valores."
 
         return pd.Series([
-            status_destaque, diag_alq, alq_esp, 
-            diag_cst, cst_esp, status_base,
-            diag_st, acao, motivo
+            status_destaque, diag_alq, diag_cst, 
+            status_base, diag_st, acao, motivo
         ])
 
-    # Colunas de Análise pós AG
+    # Colunas de Análise pós AG (Limpas e Condicionais)
     analises = [
-        'ICMS_STATUS_DESTAQUE', 'ICMS_DIAG_ALQUOTA', 'ICMS_ALQ_ESPERADA',
-        'ICMS_DIAG_CST', 'ICMS_CST_ESPERADA', 'ICMS_STATUS_BASE',
+        'ICMS_STATUS_DESTAQUE', 'ICMS_DIAG_ALQUOTA', 
+        'ICMS_DIAG_CST', 'ICMS_STATUS_BASE',
         'ICMS_DIAG_ST', 'AÇÃO_CORRETIVA', 'FUNDAMENTAÇÃO'
     ]
     
