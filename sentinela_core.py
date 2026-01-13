@@ -203,6 +203,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             processar_difal(df_xs, writer)
             
             # CHAMADA FINAL: Criação da aba de Apuração DIFAL/ST/FECP
+            # Garante que df_xe seja enviado para somar as entradas/devoluções
             try:
                 gerar_resumo_uf(df_xs, writer, df_xe)
             except Exception as e:
