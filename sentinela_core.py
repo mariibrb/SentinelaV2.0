@@ -10,15 +10,18 @@ from datetime import datetime
 # --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
     from audit_resumo import gerar_aba_resumo
-    # Importação de audit_gerencial removida para evitar erro de dependência
-    from audit_icms import processar_icms
-    from audit_ipi import processar_ipi
-    from audit_pis_cofins import processar_pc
-    from audit_difal import processar_difal
+    # Importações ajustadas para a subpasta Auditorias/
+    from Auditorias.audit_icms import processar_icms
+    from Auditorias.audit_ipi import processar_ipi
+    from Auditorias.audit_pis_cofins import processar_pc
+    from Auditorias.audit_difal import processar_difal
     from apuracao_difal import gerar_resumo_uf
     from RET.motor_ret import executar_motor_ret
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
+    # Fallback para evitar erro de 'not defined' caso o arquivo falhe
+    if 'processar_icms' not in locals():
+        def processar_icms(*args, **kwargs): pass
 
 # --- UTILITÁRIOS DE CONVERSÃO ---
 
@@ -114,7 +117,7 @@ def extrair_dados_xml(files):
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     
-    # Listas oficiais solicitadas (31 Entradas | 32 Saídas)
+    # Cabeçalhos Higietop (31 Entradas | 32 Saídas)
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
@@ -143,7 +146,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 st.error(f"Erro na leitura manual de {f.name}: {e}")
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # Processamento dos Gerenciais
+    # Core processa os CSVs da Higietop
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
@@ -151,20 +154,18 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Criação das abas Gerenciais
+        # Abas Gerenciais estruturadas pelo Core
         if not df_ger_ent.empty:
             df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         if not df_ger_sai.empty:
             df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
-        # Módulo RET (Minas Gerais)
         if is_ret:
             try:
                 executar_motor_ret(writer, df_xs, df_xe, df_ger_ent, df_ger_sai, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
 
-        # Auditorias Padrão
         if not df_xs.empty:
             st_map = {}
             if as_f:
@@ -177,6 +178,8 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
+            
+            # Chamada da auditoria corrigida
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
