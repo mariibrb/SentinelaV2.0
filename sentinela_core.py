@@ -22,7 +22,6 @@ try:
     except ImportError:
         from Apuracoes.apuracao_difal import gerar_resumo_uf
         
-    # Removido motor_ret pois as fórmulas no Excel agora fazem o trabalho
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
     if 'gerar_resumo_uf' not in locals():
@@ -178,11 +177,9 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 'style': 'TableStyleMedium2'
             })
 
-        # Criando as tabelas que as fórmulas do seu arquivo de base buscarão
         gravar_df_como_tabela(df_ger_ent, 'GERENCIAL_ENTRADAS', 'TabelaEntradas')
         gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
 
-        # Se houver dados de XML, processar as auditorias padrão
         if not df_xs.empty:
             st_map = {}
             if as_f:
@@ -201,25 +198,27 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except Exception as e: st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
 
-    # --- REPLICAÇÃO EXATA DAS ABAS DO ARQUIVO DE BASE DO CLIENTE ---
+    # --- REPLICAÇÃO EXATA DAS ABAS DO ARQUIVO DE BASE DO CLIENTE (PASTA RET) ---
     if is_ret:
         try:
-            # O nome do arquivo deve ser exatamente como no seu exemplo: Bases_Tributárias/426-RET_MG.xlsx
-            caminho_modelo = f"Bases_Tributárias/{cod_cliente}-RET_MG.xlsx"
+            # Caminho atualizado conforme sua solicitação: RET/426-RET_MG.xlsx
+            caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
             
             if os.path.exists(caminho_modelo):
                 output.seek(0)
                 wb_final = openpyxl.load_workbook(output)
                 wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
 
-                # Percorre todas as abas do arquivo de base da empresa
                 for sheet_name in wb_modelo.sheetnames:
-                    # Garantimos que não vamos sobrescrever as gerenciais recém-criadas
+                    # Garantimos que não vamos mexer nas gerenciais geradas via código
                     if sheet_name not in ['GERENCIAL_ENTRADAS', 'GERENCIAL_SAIDAS']:
                         source_sheet = wb_modelo[sheet_name]
-                        target_sheet = wb_final.create_sheet(sheet_name)
+                        if sheet_name in wb_final.sheetnames:
+                            target_sheet = wb_final[sheet_name]
+                        else:
+                            target_sheet = wb_final.create_sheet(sheet_name)
 
-                        # Copia tudo: valores, fórmulas, cores e larguras de coluna
+                        # Cópia integral de células e estilos
                         for row in source_sheet.iter_rows():
                             for cell in row:
                                 new_cell = target_sheet.cell(row=cell.row, column=cell.column, value=cell.value)
@@ -230,7 +229,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                                     new_cell.number_format = copy(cell.number_format)
                                     new_cell.alignment = copy(cell.alignment)
                         
-                        # Copia as dimensões das colunas (importante para manter o visual do RET)
+                        # Mantém as larguras originais das colunas do modelo
                         for col_name, col_dim in source_sheet.column_dimensions.items():
                             target_sheet.column_dimensions[col_name].width = col_dim.width
 
@@ -238,8 +237,8 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 wb_final.save(output_final)
                 return output_final.getvalue()
             else:
-                st.error(f"Arquivo de base RET não encontrado para o código {cod_cliente} em: {caminho_modelo}")
+                st.error(f"Arquivo de base RET não encontrado na pasta RET: {caminho_modelo}")
         except Exception as e:
-            st.error(f"Erro ao replicar abas do arquivo de base: {e}")
+            st.error(f"Erro crítico ao anexar abas do arquivo de base: {e}")
             
     return output.getvalue()
