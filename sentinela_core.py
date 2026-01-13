@@ -10,23 +10,19 @@ from datetime import datetime
 # --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
     from audit_resumo import gerar_aba_resumo
-    # Importações da subpasta Auditorias/
     from Auditorias.audit_icms import processar_icms
     from Auditorias.audit_ipi import processar_ipi
     from Auditorias.audit_pis_cofins import processar_pc
     from Auditorias.audit_difal import processar_difal
     
-    # AJUSTE: Importação da subpasta Apurações conforme sua estrutura
     try:
-        from Apurações.apuracao_difal import gerar_resumo_uf
+        from Apuracoes.apuracao_difal import gerar_resumo_uf
     except ImportError:
-        # Fallback caso a pasta esteja sem acento no sistema de arquivos
         from Apuracoes.apuracao_difal import gerar_resumo_uf
         
     from RET.motor_ret import executar_motor_ret
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
-    # Fallbacks de segurança para as funções não definidas
     if 'gerar_resumo_uf' not in locals():
         def gerar_resumo_uf(*args, **kwargs): pass
     if 'processar_icms' not in locals():
@@ -132,7 +128,6 @@ def extrair_dados_xml(files):
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     
-    # Cabeçalhos Higietop (31 Entradas | 32 Saídas)
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
@@ -155,34 +150,45 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                         parts.extend([""] * (len(colunas_alvo) - len(parts)))
                     data_rows.append(parts)
                 df = pd.DataFrame(data_rows, columns=colunas_alvo)
-                df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
                 dfs.append(df)
             except Exception as e:
                 st.error(f"Erro na leitura manual de {f.name}: {e}")
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # Leitura dos Gerenciais (Técnica Clipboard validada)
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        workbook = writer.book
+        
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Abas Gerenciais (Réplica do CSV da Domínio)
-        if not df_ger_ent.empty:
-            df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
-        if not df_ger_sai.empty:
-            df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
+        # --- FUNÇÃO PARA CRIAR TABELAS OFICIAIS (PARA FÓRMULAS DO RET) ---
+        def gravar_df_como_tabela(df, sheet_name, table_name):
+            if df.empty: return
+            worksheet = workbook.add_worksheet(sheet_name)
+            writer.sheets[sheet_name] = worksheet
+            header = df.columns.tolist()
+            data = df.values.tolist()
+            # Cria a tabela com estilo e nome definido para referências estruturadas
+            worksheet.add_table(0, 0, len(df), len(df.columns) - 1, {
+                'data': data,
+                'columns': [{'header': col} for col in header],
+                'name': table_name,
+                'style': 'TableStyleMedium2'
+            })
 
-        # Módulo RET (Minas Gerais)
+        # Gravando GERENCIAIS como Tabelas
+        gravar_df_como_tabela(df_ger_ent, 'GERENCIAL_ENTRADAS', 'TabelaEntradas')
+        gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
+
         if is_ret:
             try:
                 executar_motor_ret(writer, df_xs, df_xe, df_ger_ent, df_ger_sai, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
 
-        # Auditorias e Apurações (Apenas se houver XML carregado)
         if not df_xs.empty:
             st_map = {}
             if as_f:
@@ -196,14 +202,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chamada das Auditorias Padrão
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
             
-            # CHAMADA FINAL: Criação da aba de Apuração DIFAL/ST/FECP
-            # Garante que df_xe seja enviado para somar as entradas/devoluções
             try:
                 gerar_resumo_uf(df_xs, writer, df_xe)
             except Exception as e:
