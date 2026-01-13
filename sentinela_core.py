@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import re
 import os
 from datetime import datetime
+import openpyxl  # Necessário para ler o arquivo de base e manter fórmulas
 
 # --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
@@ -164,14 +165,12 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # --- FUNÇÃO PARA CRIAR TABELAS OFICIAIS (PARA FÓRMULAS DO RET) ---
         def gravar_df_como_tabela(df, sheet_name, table_name):
             if df.empty: return
             worksheet = workbook.add_worksheet(sheet_name)
             writer.sheets[sheet_name] = worksheet
             header = df.columns.tolist()
             data = df.values.tolist()
-            # Cria a tabela com estilo e nome definido para referências estruturadas
             worksheet.add_table(0, 0, len(df), len(df.columns) - 1, {
                 'data': data,
                 'columns': [{'header': col} for col in header],
@@ -179,7 +178,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 'style': 'TableStyleMedium2'
             })
 
-        # Gravando GERENCIAIS como Tabelas
         gravar_df_como_tabela(df_ger_ent, 'GERENCIAL_ENTRADAS', 'TabelaEntradas')
         gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
 
@@ -211,5 +209,32 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 gerar_resumo_uf(df_xs, writer, df_xe)
             except Exception as e:
                 st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
+
+    # --- LÓGICA DE MESCLAGEM DO ARQUIVO DE BASE (RET) ---
+    if is_ret:
+        try:
+            caminho_modelo = f"Bases_Tributárias/{cod_cliente}-RET_MG.xlsx"
+            if os.path.exists(caminho_modelo):
+                output.seek(0)
+                wb_final = openpyxl.load_workbook(output)
+                wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
+
+                for sheet_name in wb_modelo.sheetnames:
+                    if sheet_name not in wb_final.sheetnames:
+                        source = wb_modelo[sheet_name]
+                        target = wb_final.create_sheet(sheet_name)
+                        for row in source.iter_rows():
+                            for cell in row:
+                                new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
+                                if cell.has_style:
+                                    new_cell.font = openpyxl.styles.Font(name=cell.font.name, size=cell.font.size, bold=cell.font.bold)
+                                    new_cell.border = openpyxl.styles.Border(left=cell.border.left, right=cell.border.right, top=cell.border.top, bottom=cell.border.bottom)
+                                    new_cell.fill = openpyxl.styles.PatternFill(fill_type=cell.fill.fill_type, start_color=cell.fill.start_color, end_color=cell.fill.end_color)
+                
+                output_ret = io.BytesIO()
+                wb_final.save(output_ret)
+                return output_ret.getvalue()
+        except Exception as e:
+            st.error(f"Erro ao mesclar abas do RET: {e}")
             
     return output.getvalue()
