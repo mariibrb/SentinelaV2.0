@@ -159,6 +159,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
+    # 1. GERAÇÃO DO RELATÓRIO BASE (DADOS REAIS)
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
         try: gerar_aba_resumo(writer)
@@ -198,27 +199,22 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except Exception as e: st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
 
-    # --- REPLICAÇÃO EXATA DAS ABAS DO ARQUIVO DE BASE DO CLIENTE (PASTA RET) ---
+    # 2. REPLICAÇÃO DAS ABAS DO ARQUIVO DE BASE (SE FOR RET)
     if is_ret:
         try:
-            # Caminho atualizado conforme sua solicitação: RET/426-RET_MG.xlsx
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
-            
             if os.path.exists(caminho_modelo):
                 output.seek(0)
                 wb_final = openpyxl.load_workbook(output)
                 wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
 
                 for sheet_name in wb_modelo.sheetnames:
-                    # Garantimos que não vamos mexer nas gerenciais geradas via código
+                    # Não copiar abas que o código já cria
                     if sheet_name not in ['GERENCIAL_ENTRADAS', 'GERENCIAL_SAIDAS']:
                         source_sheet = wb_modelo[sheet_name]
-                        if sheet_name in wb_final.sheetnames:
-                            target_sheet = wb_final[sheet_name]
-                        else:
-                            target_sheet = wb_final.create_sheet(sheet_name)
+                        target_sheet = wb_final.create_sheet(sheet_name)
 
-                        # Cópia integral de células e estilos
+                        # Copia exata de cada célula (Fórmulas, Valores e Estilos)
                         for row in source_sheet.iter_rows():
                             for cell in row:
                                 new_cell = target_sheet.cell(row=cell.row, column=cell.column, value=cell.value)
@@ -229,16 +225,17 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                                     new_cell.number_format = copy(cell.number_format)
                                     new_cell.alignment = copy(cell.alignment)
                         
-                        # Mantém as larguras originais das colunas do modelo
+                        # Mantém a largura das colunas do seu arquivo original
                         for col_name, col_dim in source_sheet.column_dimensions.items():
                             target_sheet.column_dimensions[col_name].width = col_dim.width
 
+                # Salva o arquivo final mesclado
                 output_final = io.BytesIO()
                 wb_final.save(output_final)
                 return output_final.getvalue()
             else:
-                st.error(f"Arquivo de base RET não encontrado na pasta RET: {caminho_modelo}")
+                st.warning(f"Atenção: Arquivo {caminho_modelo} não encontrado na pasta RET.")
         except Exception as e:
-            st.error(f"Erro crítico ao anexar abas do arquivo de base: {e}")
+            st.error(f"Erro ao processar as abas do arquivo de base: {e}")
             
     return output.getvalue()
