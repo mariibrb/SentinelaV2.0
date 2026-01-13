@@ -10,7 +10,7 @@ from datetime import datetime
 # --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
     from audit_resumo import gerar_aba_resumo
-    from audit_gerencial import gerar_abas_gerenciais
+    # Importação de audit_gerencial removida para evitar erro de dependência
     from audit_icms import processar_icms
     from audit_ipi import processar_ipi
     from audit_pis_cofins import processar_pc
@@ -114,48 +114,36 @@ def extrair_dados_xml(files):
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     
-    # Listas oficiais solicitadas
+    # Listas oficiais solicitadas (31 Entradas | 32 Saídas)
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
     def ler_csv_estilo_clipboard(arquivos, colunas_alvo):
-        """
-        Lê o arquivo tratando-o como um clipboard (copiar/colar).
-        Resolve problemas de tabulação da Domínio Sistemas.
-        """
         if arquivos is None: return pd.DataFrame()
         lista = arquivos if isinstance(arquivos, list) else [arquivos]
         dfs = []
         for f in lista:
             f.seek(0)
             try:
-                # Lemos o conteúdo bruto como string para tratar manualmente
                 raw_content = f.read().decode('latin1', errors='replace')
-                # Forçamos a quebra de linha universal e tratamos o separador TAB
                 lines = raw_content.splitlines()
                 data_rows = []
                 for line in lines:
-                    # Se a linha for vazia, pula
                     if not line.strip(): continue
-                    # Divide por TAB ou Ponto e Vírgula (comum no copiar/colar)
                     parts = re.split(r'\t|;', line)
-                    # Ajusta o tamanho da linha para bater com as colunas esperadas
                     if len(parts) > len(colunas_alvo):
                         parts = parts[:len(colunas_alvo)]
                     elif len(parts) < len(colunas_alvo):
                         parts.extend([""] * (len(colunas_alvo) - len(parts)))
                     data_rows.append(parts)
-                
                 df = pd.DataFrame(data_rows, columns=colunas_alvo)
-                # Limpeza de resíduos e espaços
                 df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
                 dfs.append(df)
             except Exception as e:
                 st.error(f"Erro na leitura manual de {f.name}: {e}")
-                
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # Core processa os CSVs alimentando as Gerenciais (Modo Clipboard)
+    # Processamento dos Gerenciais
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
@@ -163,19 +151,20 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Abas Gerenciais estruturadas pelo Core
+        # Criação das abas Gerenciais
         if not df_ger_ent.empty:
             df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         if not df_ger_sai.empty:
             df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
+        # Módulo RET (Minas Gerais)
         if is_ret:
             try:
-                # Motor RET cria abas vazias
                 executar_motor_ret(writer, df_xs, df_xe, df_ger_ent, df_ger_sai, cod_cliente)
             except Exception as e:
                 st.error(f"Erro no Motor RET: {e}")
 
+        # Auditorias Padrão
         if not df_xs.empty:
             st_map = {}
             if as_f:
