@@ -6,7 +6,8 @@ import xml.etree.ElementTree as ET
 import re
 import os
 from datetime import datetime
-import openpyxl  # Necessário para ler o arquivo de base e manter fórmulas
+import openpyxl
+from copy import copy
 
 # --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
@@ -21,7 +22,7 @@ try:
     except ImportError:
         from Apuracoes.apuracao_difal import gerar_resumo_uf
         
-    from RET.motor_ret import executar_motor_ret
+    # Removido motor_ret pois as fórmulas no Excel agora fazem o trabalho
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
     if 'gerar_resumo_uf' not in locals():
@@ -161,7 +162,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        
         try: gerar_aba_resumo(writer)
         except: pass
         
@@ -178,15 +178,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 'style': 'TableStyleMedium2'
             })
 
+        # Criando as tabelas que as fórmulas do seu arquivo de base buscarão
         gravar_df_como_tabela(df_ger_ent, 'GERENCIAL_ENTRADAS', 'TabelaEntradas')
         gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
 
-        if is_ret:
-            try:
-                executar_motor_ret(writer, df_xs, df_xe, df_ger_ent, df_ger_sai, cod_cliente)
-            except Exception as e:
-                st.error(f"Erro no Motor RET: {e}")
-
+        # Se houver dados de XML, processar as auditorias padrão
         if not df_xs.empty:
             st_map = {}
             if as_f:
@@ -197,44 +193,53 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                         df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
-            
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
-            
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
-            
-            try:
-                gerar_resumo_uf(df_xs, writer, df_xe)
-            except Exception as e:
-                st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
+            try: gerar_resumo_uf(df_xs, writer, df_xe)
+            except Exception as e: st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
 
-    # --- LÓGICA DE MESCLAGEM DO ARQUIVO DE BASE (RET) ---
+    # --- REPLICAÇÃO EXATA DAS ABAS DO ARQUIVO DE BASE DO CLIENTE ---
     if is_ret:
         try:
+            # O nome do arquivo deve ser exatamente como no seu exemplo: Bases_Tributárias/426-RET_MG.xlsx
             caminho_modelo = f"Bases_Tributárias/{cod_cliente}-RET_MG.xlsx"
+            
             if os.path.exists(caminho_modelo):
                 output.seek(0)
                 wb_final = openpyxl.load_workbook(output)
                 wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
 
+                # Percorre todas as abas do arquivo de base da empresa
                 for sheet_name in wb_modelo.sheetnames:
-                    if sheet_name not in wb_final.sheetnames:
-                        source = wb_modelo[sheet_name]
-                        target = wb_final.create_sheet(sheet_name)
-                        for row in source.iter_rows():
+                    # Garantimos que não vamos sobrescrever as gerenciais recém-criadas
+                    if sheet_name not in ['GERENCIAL_ENTRADAS', 'GERENCIAL_SAIDAS']:
+                        source_sheet = wb_modelo[sheet_name]
+                        target_sheet = wb_final.create_sheet(sheet_name)
+
+                        # Copia tudo: valores, fórmulas, cores e larguras de coluna
+                        for row in source_sheet.iter_rows():
                             for cell in row:
-                                new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
+                                new_cell = target_sheet.cell(row=cell.row, column=cell.column, value=cell.value)
                                 if cell.has_style:
-                                    new_cell.font = openpyxl.styles.Font(name=cell.font.name, size=cell.font.size, bold=cell.font.bold)
-                                    new_cell.border = openpyxl.styles.Border(left=cell.border.left, right=cell.border.right, top=cell.border.top, bottom=cell.border.bottom)
-                                    new_cell.fill = openpyxl.styles.PatternFill(fill_type=cell.fill.fill_type, start_color=cell.fill.start_color, end_color=cell.fill.end_color)
-                
-                output_ret = io.BytesIO()
-                wb_final.save(output_ret)
-                return output_ret.getvalue()
+                                    new_cell.font = copy(cell.font)
+                                    new_cell.border = copy(cell.border)
+                                    new_cell.fill = copy(cell.fill)
+                                    new_cell.number_format = copy(cell.number_format)
+                                    new_cell.alignment = copy(cell.alignment)
+                        
+                        # Copia as dimensões das colunas (importante para manter o visual do RET)
+                        for col_name, col_dim in source_sheet.column_dimensions.items():
+                            target_sheet.column_dimensions[col_name].width = col_dim.width
+
+                output_final = io.BytesIO()
+                wb_final.save(output_final)
+                return output_final.getvalue()
+            else:
+                st.error(f"Arquivo de base RET não encontrado para o código {cod_cliente} em: {caminho_modelo}")
         except Exception as e:
-            st.error(f"Erro ao mesclar abas do RET: {e}")
+            st.error(f"Erro ao replicar abas do arquivo de base: {e}")
             
     return output.getvalue()
