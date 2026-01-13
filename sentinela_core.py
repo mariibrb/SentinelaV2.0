@@ -10,18 +10,31 @@ from datetime import datetime
 # --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
     from audit_resumo import gerar_aba_resumo
-    # Importações ajustadas para a subpasta Auditorias/
+    # Importações da subpasta Auditorias/
     from Auditorias.audit_icms import processar_icms
     from Auditorias.audit_ipi import processar_ipi
     from Auditorias.audit_pis_cofins import processar_pc
     from Auditorias.audit_difal import processar_difal
-    from apuracao_difal import gerar_resumo_uf
+    # Verifique se este arquivo está na raiz ou dentro de Auditorias/
+    try:
+        from apuracao_difal import gerar_resumo_uf
+    except ImportError:
+        from Auditorias.apuracao_difal import gerar_resumo_uf
+        
     from RET.motor_ret import executar_motor_ret
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
-    # Fallback para evitar erro de 'not defined' caso o arquivo falhe
+    # Fallbacks para o código não interromper a execução
+    if 'gerar_resumo_uf' not in locals():
+        def gerar_resumo_uf(*args, **kwargs): pass
     if 'processar_icms' not in locals():
         def processar_icms(*args, **kwargs): pass
+    if 'processar_ipi' not in locals():
+        def processar_ipi(*args, **kwargs): pass
+    if 'processar_pc' not in locals():
+        def processar_pc(*args, **kwargs): pass
+    if 'processar_difal' not in locals():
+        def processar_difal(*args, **kwargs): pass
 
 # --- UTILITÁRIOS DE CONVERSÃO ---
 
@@ -146,7 +159,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 st.error(f"Erro na leitura manual de {f.name}: {e}")
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    # Core processa os CSVs da Higietop
+    # Leitura dos Gerenciais
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
@@ -154,7 +167,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Abas Gerenciais estruturadas pelo Core
+        # Criação das abas Gerenciais
         if not df_ger_ent.empty:
             df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         if not df_ger_sai.empty:
@@ -179,11 +192,12 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chamada da auditoria corrigida
+            # Execução das Auditorias
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
+            # A função que estava dando erro agora está protegida
             gerar_resumo_uf(df_xs, writer, df_xe) 
             
     return output.getvalue()
