@@ -3,13 +3,12 @@ import pandas as pd
 UFS_BRASIL = ['AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO']
 
 def gerar_resumo_uf(df_saida, writer, df_entrada=None):
-    # Garantir que temos dados para trabalhar
     if df_entrada is None: df_entrada = pd.DataFrame()
     
-    # Unifica tudo para encontrar devoluções em qualquer lugar
+    # Une saídas e entradas para capturar devoluções de emissão própria
     df_total = pd.concat([df_saida, df_entrada], ignore_index=True)
     
-    # FILTRO: Apenas notas AUTORIZADAS
+    # FILTRO: Somente notas autorizadas
     if 'Situação Nota' in df_total.columns:
         df_total = df_total[df_total['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)]
 
@@ -19,40 +18,44 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
         df_temp['PREFIXO'] = df_temp['CFOP'].astype(str).str.strip().str[0]
         
         if tipo == 'saida':
-            # SAÍDAS: CFOP 5, 6, 7 | Agrupa pelo destino (Cliente)
+            # Vendas Normais (CFOP 5, 6, 7)
             df_filtro = df_temp[df_temp['PREFIXO'].isin(['5', '6', '7'])]
-            col_uf_agrupar = 'UF_DEST'
+            col_uf_final = 'UF_DEST'
         else:
-            # ENTRADAS/DEVOLUÇÕES: CFOP 1, 2, 3 | Agrupa pelo emitente (Origem da devolução/compra)
+            # Entradas e Devoluções (CFOP 1, 2, 3)
             df_filtro = df_temp[df_temp['PREFIXO'].isin(['1', '2', '3'])]
-            col_uf_agrupar = 'UF_EMIT' 
+            
+            # LÓGICA CORRIGIDA: 
+            # Se eu sou o emitente (Devolução Própria), a UF da devolução é a do Destinatário (Cliente).
+            # Se o fornecedor é o emitente (Compra), a UF é a do Emitente.
+            # Como você é de SP, se UF_EMIT == 'SP', pegamos a UF_DEST.
+            df_filtro['UF_AGRUPAR'] = df_filtro.apply(
+                lambda x: x['UF_DEST'] if x['UF_EMIT'] == 'SP' else x['UF_EMIT'], axis=1
+            )
+            col_uf_final = 'UF_AGRUPAR'
 
         if df_filtro.empty:
             for c in ['VAL-ICMS-ST', 'DIFAL_CONSOLIDADO', 'VAL-FCP', 'VAL-FCP-ST']: base[c] = 0.0
             base['IE_SUBST'] = ""
             return base
 
-        # Agrupamento somando os impostos
-        agrupado = df_filtro.groupby([col_uf_agrupar]).agg({
+        agrupado = df_filtro.groupby([col_uf_final]).agg({
             'VAL-ICMS-ST': 'sum', 
             'VAL-DIFAL': 'sum', 
             'VAL-FCP-DEST': 'sum', 
             'VAL-FCP': 'sum', 
             'VAL-FCP-ST': 'sum'
-        }).reset_index().rename(columns={col_uf_agrupar: 'UF_DEST'})
+        }).reset_index().rename(columns={col_uf_final: 'UF_DEST'})
         
         agrupado['DIFAL_CONSOLIDADO'] = agrupado['VAL-DIFAL'] + agrupado['VAL-FCP-DEST']
-        
-        # Merge com a lista de todos os estados brasileiros
         final = pd.merge(base, agrupado, on='UF_DEST', how='left').fillna(0)
         
-        # Recupera a IE Substituta para aplicar a cor laranja
-        ie_map = df_filtro[df_filtro['IE_SUBST'] != ""].groupby(col_uf_agrupar)['IE_SUBST'].first().to_dict()
+        # Mapeamento de IE para o destaque laranja
+        ie_map = df_filtro[df_filtro['IE_SUBST'] != ""].groupby(col_uf_final)['IE_SUBST'].first().to_dict()
         final['IE_SUBST'] = final['UF_DEST'].map(ie_map).fillna("").astype(str)
         
         return final[['UF_DEST', 'IE_SUBST', 'VAL-ICMS-ST', 'DIFAL_CONSOLIDADO', 'VAL-FCP', 'VAL-FCP-ST']]
 
-    # Processamento das Tabelas
     res_s = preparar_tabela('saida')
     res_e = preparar_tabela('entrada')
 
@@ -84,7 +87,6 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
         
         for r_idx, row in enumerate(df_t.values):
             uf = str(row[0]).strip()
-            # Mantém a linha laranja se houver IE na aba de Saídas
             tem_ie = res_s.loc[res_s['UF_DEST'] == uf, 'IE_SUBST'].values[0] != ""
             
             for c_idx, val in enumerate(row):
@@ -94,9 +96,6 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
                 else:
                     worksheet.write(r_idx + 3, start_c + c_idx, val, fmt)
         
-        # Totais Gerais
-        worksheet.write(30, start_c, "TOTAL GERAL", f_total)
-        worksheet.write(30, start_c + 1, "", f_total)
         for i in range(2, 6):
             c_idx = start_c + i
             col_let = chr(65 + c_idx) if c_idx < 26 else f"A{chr(65 + c_idx - 26)}"
