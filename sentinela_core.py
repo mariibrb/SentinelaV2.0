@@ -159,7 +159,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
-    # 1. GERAÇÃO DO RELATÓRIO BASE (DADOS REAIS)
+    # 1. GERAÇÃO DO RELATÓRIO COM XLSXWRITER (Tabelas e Auditorias)
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
         try: gerar_aba_resumo(writer)
@@ -191,30 +191,37 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                         df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
+            
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
-            try: gerar_resumo_uf(df_xs, writer, df_xe)
-            except Exception as e: st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
+            try:
+                gerar_resumo_uf(df_xs, writer, df_xe)
+            except Exception as e:
+                st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
 
-    # 2. REPLICAÇÃO DAS ABAS DO ARQUIVO DE BASE (SE FOR RET)
+    # 2. SE FOR RET, MESCLA COM O ARQUIVO DE BASE NA PASTA /RET
     if is_ret:
         try:
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
+            
             if os.path.exists(caminho_modelo):
                 output.seek(0)
                 wb_final = openpyxl.load_workbook(output)
                 wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
 
                 for sheet_name in wb_modelo.sheetnames:
-                    # Não copiar abas que o código já cria
+                    # Não copiar abas que já foram geradas (Entradas e Saídas)
                     if sheet_name not in ['GERENCIAL_ENTRADAS', 'GERENCIAL_SAIDAS']:
                         source_sheet = wb_modelo[sheet_name]
-                        target_sheet = wb_final.create_sheet(sheet_name)
+                        if sheet_name in wb_final.sheetnames:
+                            target_sheet = wb_final[sheet_name]
+                        else:
+                            target_sheet = wb_final.create_sheet(sheet_name)
 
-                        # Copia exata de cada célula (Fórmulas, Valores e Estilos)
+                        # Cópia profunda de células, fórmulas e estilos
                         for row in source_sheet.iter_rows():
                             for cell in row:
                                 new_cell = target_sheet.cell(row=cell.row, column=cell.column, value=cell.value)
@@ -225,17 +232,16 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                                     new_cell.number_format = copy(cell.number_format)
                                     new_cell.alignment = copy(cell.alignment)
                         
-                        # Mantém a largura das colunas do seu arquivo original
+                        # Replicar as larguras das colunas
                         for col_name, col_dim in source_sheet.column_dimensions.items():
                             target_sheet.column_dimensions[col_name].width = col_dim.width
 
-                # Salva o arquivo final mesclado
                 output_final = io.BytesIO()
                 wb_final.save(output_final)
                 return output_final.getvalue()
             else:
-                st.warning(f"Atenção: Arquivo {caminho_modelo} não encontrado na pasta RET.")
+                st.error(f"Arquivo modelo RET não encontrado para o código {cod_cliente} em: {caminho_modelo}")
         except Exception as e:
-            st.error(f"Erro ao processar as abas do arquivo de base: {e}")
+            st.error(f"Erro na mesclagem das abas do arquivo de base: {e}")
             
     return output.getvalue()
