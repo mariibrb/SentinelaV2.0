@@ -18,17 +18,11 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
         df_temp['PREFIXO'] = df_temp['CFOP'].astype(str).str.strip().str[0]
         
         if tipo == 'saida':
-            # Vendas Normais (CFOP 5, 6, 7)
             df_filtro = df_temp[df_temp['PREFIXO'].isin(['5', '6', '7'])]
             col_uf_final = 'UF_DEST'
         else:
-            # Entradas e Devoluções (CFOP 1, 2, 3)
             df_filtro = df_temp[df_temp['PREFIXO'].isin(['1', '2', '3'])]
-            
-            # LÓGICA CORRIGIDA: 
-            # Se eu sou o emitente (Devolução Própria), a UF da devolução é a do Destinatário (Cliente).
-            # Se o fornecedor é o emitente (Compra), a UF é a do Emitente.
-            # Como você é de SP, se UF_EMIT == 'SP', pegamos a UF_DEST.
+            # Lógica de Devolução Própria: Se Emitente for SP, olha Destinatário
             df_filtro['UF_AGRUPAR'] = df_filtro.apply(
                 lambda x: x['UF_DEST'] if x['UF_EMIT'] == 'SP' else x['UF_EMIT'], axis=1
             )
@@ -50,7 +44,7 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
         agrupado['DIFAL_CONSOLIDADO'] = agrupado['VAL-DIFAL'] + agrupado['VAL-FCP-DEST']
         final = pd.merge(base, agrupado, on='UF_DEST', how='left').fillna(0)
         
-        # Mapeamento de IE para o destaque laranja
+        # Mapeamento de IE para o destaque laranja e trava de saldo
         ie_map = df_filtro[df_filtro['IE_SUBST'] != ""].groupby(col_uf_final)['IE_SUBST'].first().to_dict()
         final['IE_SUBST'] = final['UF_DEST'].map(ie_map).fillna("").astype(str)
         
@@ -59,11 +53,32 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
     res_s = preparar_tabela('saida')
     res_e = preparar_tabela('entrada')
 
-    # SALDO (Saídas - Entradas)
+    # SALDO (Regra: Só abate se houver IE_SUBST preenchida na Saída)
     res_saldo = pd.DataFrame({'UF': UFS_BRASIL})
     res_saldo['IE_SUBST'] = res_s['IE_SUBST']
-    for c_xml, c_fin in [('VAL-ICMS-ST', 'ST LÍQUIDO'), ('DIFAL_CONSOLIDADO', 'DIFAL LÍQUIDO'), ('VAL-FCP', 'FCP LÍQUIDO'), ('VAL-FCP-ST', 'FCP-ST LÍQUIDO')]:
-        res_saldo[c_fin] = res_s[c_xml] - res_e[c_xml]
+    
+    colunas_imposto = [
+        ('VAL-ICMS-ST', 'ST LÍQUIDO'), 
+        ('DIFAL_CONSOLIDADO', 'DIFAL LÍQUIDO'), 
+        ('VAL-FCP', 'FCP LÍQUIDO'), 
+        ('VAL-FCP-ST', 'FCP-ST LÍQUIDO')
+    ]
+
+    for c_xml, c_fin in colunas_imposto:
+        # Aplicamos a trava linha por linha (estado por estado)
+        valores_saldo = []
+        for i in range(len(res_s)):
+            tem_ie = res_s.iloc[i]['IE_SUBST'] != ""
+            valor_saida = res_s.iloc[i][c_xml]
+            valor_entrada = res_e.iloc[i][c_xml]
+            
+            # Se tem IE, faz Saída - Entrada. Se NÃO tem IE, Saldo = Saída pura.
+            if tem_ie:
+                valores_saldo.append(valor_saida - valor_entrada)
+            else:
+                valores_saldo.append(valor_saida)
+        
+        res_saldo[c_fin] = valores_saldo
 
     # --- EXCEL ---
     workbook = writer.book
@@ -96,6 +111,9 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
                 else:
                     worksheet.write(r_idx + 3, start_c + c_idx, val, fmt)
         
+        # Totais
+        worksheet.write(30, start_c, "TOTAL GERAL", f_total)
+        worksheet.write(30, start_c + 1, "", f_total)
         for i in range(2, 6):
             c_idx = start_c + i
             col_let = chr(65 + c_idx) if c_idx < 26 else f"A{chr(65 + c_idx - 26)}"
