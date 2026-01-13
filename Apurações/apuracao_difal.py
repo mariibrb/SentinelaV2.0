@@ -3,35 +3,40 @@ import pandas as pd
 UFS_BRASIL = ['AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO']
 
 def gerar_resumo_uf(df_saida, writer, df_entrada=None):
-    # Alterar somente o que foi solicitado (Soma das Entradas e Filtro de Canceladas)
-    if df_entrada is None or df_entrada.empty:
-        df_entrada = pd.DataFrame(columns=df_saida.columns)
+    # Garante que temos DataFrames válidos
+    if df_entrada is None: df_entrada = pd.DataFrame()
+    
+    # --- UNIFICAÇÃO DOS DADOS PARA SOMAR DEVOLUÇÕES ---
+    # Unimos os dois blocos para garantir que devoluções em qualquer pasta sejam vistas
+    df_total = pd.concat([df_saida, df_entrada], ignore_index=True)
+    
+    # 1. FILTRO DE CANCELADAS (Só entra nota AUTORIZADA)
+    if 'Situação Nota' in df_total.columns:
+        df_total = df_total[df_total['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)]
 
-    def preparar_tabela(df_origem, tipo):
-        # SAÍDA: agrupa por UF_DEST | ENTRADA: agrupa por UF_EMIT
-        col_uf = 'UF_DEST' if tipo == 'saida' else 'UF_EMIT'
+    def preparar_tabela(tipo):
         base = pd.DataFrame({'UF_DEST': UFS_BRASIL})
         
-        if df_origem.empty:
+        # 2. SEPARAÇÃO POR CFOP (A regra que você pediu)
+        # Saídas: CFOP começa com 5, 6 ou 7
+        # Entradas (Compras e Devoluções): CFOP começa com 1, 2 ou 3
+        df_temp = df_total.copy()
+        df_temp['PREFIXO'] = df_temp['CFOP'].astype(str).str.strip().str[0]
+        
+        if tipo == 'saida':
+            df_filtro = df_temp[df_temp['PREFIXO'].isin(['5', '6', '7'])]
+            col_uf = 'UF_DEST'
+        else:
+            df_filtro = df_temp[df_temp['PREFIXO'].isin(['1', '2', '3'])]
+            col_uf = 'UF_EMIT' # Nas entradas, somamos pela UF de origem do fornecedor/devolução
+
+        if df_filtro.empty:
             for c in ['VAL-ICMS-ST', 'DIFAL_CONSOLIDADO', 'VAL-FCP', 'VAL-FCP-ST']: base[c] = 0.0
             base['IE_SUBST'] = ""
             return base
 
-        # --- FILTRO DE SITUAÇÃO (IGNORA CANCELADAS) ---
-        # Mantém apenas o que for 'AUTORIZADA'. Se não tiver a coluna, processa tudo.
-        df_validado = df_origem.copy()
-        if 'Situação Nota' in df_validado.columns:
-            df_validado = df_validado[df_validado['Situação Nota'].astype(str).str.upper().str.contains('AUTORIZAD', na=False)]
-
-        # --- FILTRO DE CFOP (OPERAÇÕES COMERCIAIS) ---
-        df_validado['CFOP_PREFIXO'] = df_validado['CFOP'].astype(str).str.strip().str[0]
-        if tipo == 'saida':
-            df_validado = df_validado[df_validado['CFOP_PREFIXO'].isin(['5', '6', '7'])]
-        else:
-            df_validado = df_validado[df_validado['CFOP_PREFIXO'].isin(['1', '2', '3'])]
-
-        # Agrupamento e Soma
-        agrupado = df_validado.groupby([col_uf]).agg({
+        # 3. AGRUPAMENTO POR ESTADO
+        agrupado = df_filtro.groupby([col_uf]).agg({
             'VAL-ICMS-ST': 'sum', 
             'VAL-DIFAL': 'sum', 
             'VAL-FCP-DEST': 'sum', 
@@ -43,29 +48,28 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
         
         final = pd.merge(base, agrupado, on='UF_DEST', how='left').fillna(0)
         
-        # Mapeamento da IE Substituta
-        ie_map = df_validado[df_validado['IE_SUBST'] != ""].groupby(col_uf)['IE_SUBST'].first().to_dict()
+        # Mapeamento de IE Substituta (Para o destaque laranja)
+        ie_map = df_filtro[df_filtro['IE_SUBST'] != ""].groupby(col_uf)['IE_SUBST'].first().to_dict()
         final['IE_SUBST'] = final['UF_DEST'].map(ie_map).fillna("").astype(str)
         
         return final[['UF_DEST', 'IE_SUBST', 'VAL-ICMS-ST', 'DIFAL_CONSOLIDADO', 'VAL-FCP', 'VAL-FCP-ST']]
 
-    # Processamento
-    res_s = preparar_tabela(df_saida, 'saida')
-    res_e = preparar_tabela(df_entrada, 'entrada')
+    # Processamento Final
+    res_s = preparar_tabela('saida')
+    res_e = preparar_tabela('entrada')
 
-    # Saldo Líquido (Abatendo Entradas das Saídas)
+    # SALDO (Saídas - Entradas)
     res_saldo = pd.DataFrame({'UF': UFS_BRASIL})
     res_saldo['IE_SUBST'] = res_s['IE_SUBST']
     for c_xml, c_fin in [('VAL-ICMS-ST', 'ST LÍQUIDO'), ('DIFAL_CONSOLIDADO', 'DIFAL LÍQUIDO'), ('VAL-FCP', 'FCP LÍQUIDO'), ('VAL-FCP-ST', 'FCP-ST LÍQUIDO')]:
         res_saldo[c_fin] = res_s[c_xml] - res_e[c_xml]
 
-    # --- EXCEL ---
+    # --- EXCEL (Mantendo a formatação laranja aprovada) ---
     workbook = writer.book
     worksheet = workbook.add_worksheet('DIFAL_ST_FECP')
     writer.sheets['DIFAL_ST_FECP'] = worksheet
     worksheet.hide_gridlines(2)
     
-    # Formatos (Mantendo a regra da cor laranja)
     f_title = workbook.add_format({'bold': True, 'align': 'center', 'font_color': '#FF6F00', 'border': 1})
     f_head = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E0E0E0', 'align': 'center'})
     f_num = workbook.add_format({'num_format': '#,##0.00', 'border': 1})
@@ -85,17 +89,11 @@ def gerar_resumo_uf(df_saida, writer, df_entrada=None):
             tem_ie = res_s.loc[res_s['UF_DEST'] == uf, 'IE_SUBST'].values[0] != ""
             
             for c_idx, val in enumerate(row):
-                if tem_ie:
-                    fmt = f_orange_num if isinstance(val, (int, float)) else f_orange_fill
-                else:
-                    fmt = f_num if isinstance(val, (int, float)) else f_border
-                
-                if c_idx == 1:
-                    worksheet.write_string(r_idx + 3, start_c + c_idx, str(val), fmt)
-                else:
-                    worksheet.write(r_idx + 3, start_c + c_idx, val, fmt)
+                fmt = f_orange_num if tem_ie and isinstance(val, (int, float)) else f_orange_fill if tem_ie else f_num if isinstance(val, (int, float)) else f_border
+                if c_idx == 1: worksheet.write_string(r_idx + 3, start_c + c_idx, str(val), fmt)
+                else: worksheet.write(r_idx + 3, start_c + c_idx, val, fmt)
         
-        # Totais Gerais
+        # Totais
         worksheet.write(30, start_c, "TOTAL GERAL", f_total)
         worksheet.write(30, start_c + 1, "", f_total)
         for i in range(2, 6):
