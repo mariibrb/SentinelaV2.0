@@ -1,6 +1,6 @@
-# 🧡 SENTINELA | Manual de Operação e Auditoria Digital
+# 🧡 SENTINELA | Manual de Operação e Guia de Auditoria
 
-O **Sentinela** é uma ferramenta de auditoria fiscal de alta performance desenvolvida em Python. Este manual orienta a configuração do ambiente, a organização das bases no GitHub e a preparação dos dados para garantir que os cruzamentos fiscais sejam 100% precisos.
+O **Sentinela** é uma ferramenta de auditoria fiscal de alta performance. Este manual orienta a configuração, a preparação dos dados e, principalmente, como agir sobre os diagnósticos gerados pelo sistema.
 
 ---
 
@@ -16,63 +16,69 @@ O **Sentinela** é uma ferramenta de auditoria fiscal de alta performance desenv
 
 ## 📂 2. Estrutura de Pastas e Bases (GitHub)
 
-O sistema busca arquivos dinamicamente no seu repositório privado. Para o funcionamento correto, respeite exatamente esta estrutura:
+O sistema busca arquivos dinamicamente no seu repositório. Respeite esta estrutura:
 
-- **Bases_Tributárias/** -> Arquivo: CÓDIGO-Bases_Tributarias.xlsx (Ex: 394-Bases_Tributarias.xlsx)
-- **RET/** -> Arquivo: CÓDIGO-RET_MG.xlsx (Ex: 394-RET_MG.xlsx)
-- **PIS_COFINS/** -> Arquivo: CÓDIGO-PIS_COFINS.xlsx (Ex: 394-PIS_COFINS.xlsx)
-- **.streamlit/** -> Arquivos: config.toml, secrets.toml e Clientes Ativos.xlsx.
+- **Bases_Tributárias/** -> CÓDIGO-Bases_Tributarias.xlsx (Regras de alíquotas e CST)
+- **RET/** -> CÓDIGO-RET_MG.xlsx (Modelos de Regime Especial)
+- **PIS_COFINS/** -> CÓDIGO-PIS_COFINS.xlsx (Bases personalizadas)
+- **.streamlit/** -> config.toml (Upload de 1GB), secrets.toml e Clientes Ativos.xlsx.
 
 ---
 
 ## 📥 3. Preparação dos Arquivos para Upload
 
-### 📄 Arquivos XML (Notas Fiscais)
-* O sistema aceita arquivos .xml individuais ou pastas compactadas em .zip.
-* A leitura é recursiva: o Sentinela vasculha todas as subpastas dentro do ZIP automaticamente.
+### 📄 XMLs
+* O sistema aceita arquivos .xml ou .zip. A leitura é recursiva (lê todas as pastas internas).
 
-### 📄 Relatórios Gerenciais (CSV ou Excel)
-As colunas devem conter os nomes padrões para cruzamento:
-* NUM_NF ou NF (Número da Nota)
-* VLR_NF ou VITEM (Valor do Item/Total)
-* CFOP e NCM (8 dígitos)
-* CST-ICMS ou CST
+### 📄 Relatórios Gerenciais
+* As colunas devem conter: `NUM_NF`, `VLR_NF` (ou `VITEM`), `CFOP`, `NCM`, `CST-ICMS`.
 
 ### 📄 Relatórios de Autenticidade
-* Utilizados para validar o status da nota (Autorizada/Cancelada). O sistema lê a chave de acesso e busca o status na 6ª coluna do arquivo.
+* Usados para validar o status da nota. O sistema busca o status na 6ª coluna.
 
 ---
 
-## 🛠️ 4. Configurações Técnicas (Desenvolvedor)
+## 🛠️ 4. Configurações Técnicas (Servidor)
 
-### Limite de Upload (1GB)
-O arquivo .streamlit/config.toml DEVE conter estas linhas para permitir arquivos pesados:
-
+### Limite de Upload (1GB) e Tema
+O arquivo `.streamlit/config.toml` deve conter:
 [server]
 headless = true
 maxUploadSize = 1000
 
-### Variáveis de Segurança (Secrets no Streamlit Cloud)
-Configure no painel Settings > Secrets:
-* GITHUB_TOKEN: Seu Personal Access Token do GitHub.
-* GITHUB_REPO: Seu repositório no formato usuario/nome-do-projeto.
+---
+
+## ⚖️ 5. Guia de Diagnóstico: O que fazer em cada situação?
+
+Quando o relatório final apontar divergências, siga estas orientações:
+
+### 🚩 Erro de Alíquota de ICMS (Aba ICMS)
+* **Situação:** O valor calculado pelo Sentinela difere do valor destacado na nota.
+* **O que fazer:** Verifique se a regra na "Base Tributária" do GitHub está atualizada para aquele NCM/Estado. Se a regra estiver certa, a empresa destacou o imposto errado; se a regra mudou, atualize a planilha no GitHub.
+
+### 🚩 Diferença de Base de Cálculo (Aba IPI/ICMS)
+* **Situação:** A base de cálculo da nota está menor que o valor do item.
+* **O que fazer:** Avalie se há benefícios fiscais (redução de base) não mapeados. Caso contrário, pode haver uma omissão de base tributável.
+
+### 🚩 CST Incorreto
+* **Situação:** O CST informado na nota não condiz com a operação ou com a regra do cliente.
+* **O que fazer:** Cruze com o CFOP. Se for uma operação de Substituição Tributária (ST) e o CST for de Tributação Integral, há um erro de parametrização no ERP do cliente.
+
+### 🚩 PIS/COFINS em Desacordo (Aba PIS_COFINS)
+* **Situação:** Alíquota calculada diverge do regime (Real 1,65%/7,6% ou Presumido 0,65%/3%).
+* **O que fazer:** Verifique se o item é monofásico ou alíquota zero. Se o toggle "Habilitar PIS/COFINS" foi usado, confira se o item está na lista de exceções da sua base personalizada.
+
+### 🚩 Nota "Não Encontrada" ou "Cancelada"
+* **Situação:** Status da nota aparece como erro ou divergente do Gerencial.
+* **O que fazer:** Verifique o arquivo de Autenticidade. Notas canceladas no SEFAZ mas presentes no Gerencial indicam que o financeiro/fiscal do cliente não processou o cancelamento no sistema interno.
 
 ---
 
-## ⚖️ 5. Fluxo de Operação Passo a Passo
+## 💾 6. O Relatório Final
 
-1. **Seleção do Cliente:** Selecione a empresa. O sistema emitirá um aviso Verde confirmando que as bases foram localizadas no GitHub.
-2. **Habilitar Modelos:** Ative os botões (Toggles) de RET MG ou PIS/COFINS apenas se você subiu os arquivos correspondentes para as pastas no GitHub.
-3. **Upload de Arquivos:** Insira os XMLs e os relatórios de Entradas e Saídas nos campos indicados.
-4. **Execução:** Clique em INICIAR AUDITORIA. O sistema processará os dados e aplicará as fórmulas de auditoria.
-
----
-
-## 💾 6. Entendendo o Relatório Final (Excel)
-
-* **RESUMO:** Painel geral com as principais divergências encontradas.
-* **AUDITORIAS:** Abas coloridas onde cada linha aponta o valor calculado pelo sistema vs. o valor da nota, destacando erros de alíquota ou base de cálculo.
-* **MESCLAGEM:** Se habilitado, as abas extras de PIS/COFINS ou RET serão anexadas ao final do arquivo, mantendo toda a formatação original.
+* **RESUMO:** Visão executiva das falhas.
+* **AUDITORIAS:** Detalhamento linha a linha para correções no ERP.
+* **MESCLAGEM:** Abas externas (RET/PC) anexadas ao final para conferência completa.
 
 ---
 🧡 Sentinela - Tecnologia a serviço da conformidade fiscal.
