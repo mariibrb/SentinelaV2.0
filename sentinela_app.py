@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS PREMIUM 2.0 (ULTRA CLEAN + BARRA LARANJA) ---
+# --- ESTILO CSS RADICAL PARA MATAR BARRAS BRANCAS ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -14,32 +14,35 @@ st.markdown("""
     .stApp { background-color: #F0F2F6; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; margin-bottom: 25px; }
+    /* Remove bordas de widgets e divisores do Streamlit */
+    div[data-testid="stVerticalBlock"] > div { border: none !important; margin: 0 !important; padding: 0 !important; }
+    hr { border: none !important; }
+
+    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; }
     
-    /* Títulos dos Passos sem divisores brancos */
+    /* Título sem linha branca embaixo */
     h3 { 
         color: #444444 !important; 
         font-size: 1.1rem; 
         border-bottom: none !important; 
-        padding-bottom: 0px !important; 
-        margin-bottom: 10px !important; 
+        margin-bottom: 5px !important; 
     }
-    h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 5px; }
 
     .card {
         background-color: #FFFFFF;
         padding: 25px;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 10px;
+        margin-bottom: 5px;
     }
 
-    /* A BARRA LARANJA FININHA */
-    hr {
-        margin: 15px 0px !important;
-        border: 0;
+    /* LINHA LARANJA FININHA CUSTOMIZADA */
+    .linha-laranja {
         height: 1.5px;
-        background-image: linear-gradient(to right, rgba(255, 111, 0, 0), rgba(255, 111, 0, 0.75), rgba(255, 111, 0, 0));
+        background-color: #FF6F00;
+        margin: 15px auto;
+        width: 95%;
+        border-radius: 2px;
     }
 
     .stButton > button {
@@ -55,21 +58,13 @@ st.markdown("""
     .status-container {
         padding: 15px;
         border-radius: 10px;
-        margin-bottom: 10px;
+        margin-bottom: 5px;
         border-left: 6px solid #FF6F00;
         background-color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-    
-    section[data-testid="stFileUploadDropzone"] {
-        border: 2px dashed #FF6F00 !important;
-        background-color: #FFF9F5 !important;
-        border-radius: 10px !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- CARREGAMENTO DA BASE DE CLIENTES ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
     caminhos = [".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv", ".streamlit/Clientes Ativos.xlsx"]
@@ -78,18 +73,17 @@ def carregar_base_clientes():
             try:
                 df = pd.read_csv(caminho) if caminho.endswith('.csv') else pd.read_excel(caminho)
                 df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
-                df['CÓD'] = df['CÓD'].astype(str).str.strip()
+                # TRATAMENTO PARA REMOVER O .0 (Converte para int e depois string)
+                df['CÓD'] = df['CÓD'].apply(lambda x: str(int(float(x))))
                 return df
             except: continue
     return pd.DataFrame()
 
-# --- VERIFICAÇÃO DE BASE NO GITHUB ---
 def verificar_base_github(cod_cliente):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
     if not token or not repo: return False
-    cod_limpo = str(cod_cliente).strip()
-    url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias/{cod_limpo}-Bases_Tributarias.xlsx"
+    url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"
     headers = {"Authorization": f"token {token}"}
     try:
         res = requests.get(url, headers=headers, timeout=5)
@@ -101,17 +95,16 @@ df_clientes = carregar_base_clientes()
 with st.sidebar:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
-    st.markdown("<br>", unsafe_allow_html=True)
     def criar_gabarito():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO', index=False)
         return output.getvalue()
+    st.markdown("<br>", unsafe_allow_html=True)
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 st.markdown("<h1>SENTINELA</h1>", unsafe_allow_html=True)
 
-# --- SELEÇÃO ---
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
@@ -119,7 +112,7 @@ with col_a:
     st.markdown("### 👣 Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
         opcoes = [f"{l['CÓD']} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
-        selecao = st.selectbox("Selecione o cliente na lista", [""] + opcoes, label_visibility="collapsed")
+        selecao = st.selectbox("Selecione", [""] + opcoes, label_visibility="collapsed")
     else:
         st.error("Base de clientes não carregada.")
         selecao = None
@@ -133,12 +126,12 @@ if selecao:
     with col_b:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### ⚖️ Passo 2: Configuração")
-        regime = st.selectbox("Regime Tributário", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
+        regime = st.selectbox("Regime", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # BARRA LARANJA ENTRE PASSOS 2 E STATUS
-    st.markdown("<hr>", unsafe_allow_html=True)
+    # LINHA LARANJA
+    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
 
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
@@ -148,8 +141,8 @@ if selecao:
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
         st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
 
-    # BARRA LARANJA ENTRE STATUS E PASSO 3
-    st.markdown("<hr>", unsafe_allow_html=True)
+    # LINHA LARANJA
+    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
 
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
@@ -157,7 +150,7 @@ if selecao:
     with c1:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("#### 📄 XML")
-        xmls = st.file_uploader("Upload", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
+        xmls = st.file_uploader("XML", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
@@ -174,8 +167,7 @@ if selecao:
         as_f = st.file_uploader("Autenticidade ", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # BARRA LARANJA ANTES DO BOTÃO FINAL
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
 
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
