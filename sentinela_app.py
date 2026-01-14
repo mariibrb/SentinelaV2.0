@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS PREMIUM REFINADO ---
+# --- ESTILO CSS PARA EXTERMINAR ESPAÇOS BRANCOS E REPOR A LINHA LARANJA ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -14,27 +14,32 @@ st.markdown("""
     .stApp { background-color: #F0F2F6; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* Cabeçalho sem o separador que incomodava */
-    .titulo-container { text-align: left; margin-bottom: 20px; padding-left: 10px; }
+    /* MATA O ESPAÇADOR BRANCO (GAP) DO STREAMLIT */
+    .stVerticalBlock { gap: 0rem !important; }
+    div[data-testid="stVerticalBlock"] > div { padding: 0px !important; margin: 0px !important; }
+
+    /* Cabeçalho */
+    .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 0px; }
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
 
-    /* Barra fininha para os passos internos apenas */
-    .linha-laranja {
+    /* A LINHA LARANJA FININHA QUE VOCÊ GOSTOU (COM GRADIENTE) */
+    .barra-laranja-fina {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
         border: none;
-        margin: 15px 0;
+        margin: 5px 0 20px 0;
         width: 100%;
         border-radius: 10px;
     }
 
+    /* Cards Brancos */
     .card {
         background-color: #FFFFFF;
         padding: 25px;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
 
     h3 { color: #444444 !important; font-size: 1.1rem; border: none !important; margin-bottom: 10px !important; }
@@ -48,7 +53,6 @@ st.markdown("""
         width: 100% !important;
         height: 3.5rem !important;
         border: none !important;
-        box-shadow: 0px 4px 10px rgba(255, 111, 0, 0.3) !important;
     }
 
     .status-container {
@@ -56,7 +60,7 @@ st.markdown("""
         border-radius: 12px;
         border-left: 6px solid #FF6F00;
         background-color: #FFFFFF;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
 
     section[data-testid="stFileUploadDropzone"] {
@@ -106,10 +110,11 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
-# --- CABEÇALHO (Agora limpo, sem o separador laranja abaixo dele) ---
+# --- CABEÇALHO COM A LINHA LARANJA ---
 st.markdown("""
 <div class='titulo-container'>
     <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Auditoria Digital</span>
+    <div class='barra-laranja-fina'></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -137,7 +142,6 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Status Bar
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
     if not verificar_base_github(cod_cliente):
@@ -146,10 +150,6 @@ if selecao:
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
         st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
 
-    # LINHA LARANJA ENTRE STATUS E PASSO 3
-    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
-
-    # UPLOAD EM TRÊS COLUNAS
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
@@ -172,9 +172,6 @@ if selecao:
         gs = st.file_uploader("Gerencial ", type=['csv', 'xlsx'], accept_multiple_files=True, key="gs")
         as_f = st.file_uploader("Autenticidade ", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
         st.markdown("</div>", unsafe_allow_html=True)
-
-    # LINHA LARANJA FINAL ANTES DO BOTÃO
-    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     _, col_btn, _ = st.columns([1, 1, 1])
