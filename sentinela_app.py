@@ -4,7 +4,7 @@ import requests
 from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
+st.set_page_config(page_title="Análise tributária", page_icon="🧡", layout="wide")
 
 # --- CSS TOTALMENTE LIMPO ---
 st.markdown("""
