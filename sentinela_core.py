@@ -9,19 +9,17 @@ from datetime import datetime
 import openpyxl
 from copy import copy
 
-# --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS (Mantendo sua estrutura original) ---
+# --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
 try:
     from audit_resumo import gerar_aba_resumo
     from Auditorias.audit_icms import processar_icms
     from Auditorias.audit_ipi import processar_ipi
     from Auditorias.audit_pis_cofins import processar_pc
     from Auditorias.audit_difal import processar_difal
-    
     try:
         from Apuracoes.apuracao_difal import gerar_resumo_uf
     except ImportError:
         from Apuracoes.apuracao_difal import gerar_resumo_uf
-        
 except ImportError as e:
     st.error(f"Erro Crítico de Dependência: {e}")
     if 'gerar_resumo_uf' not in locals():
@@ -48,7 +46,7 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-# --- NOVO MOTOR DE PROCESSAMENTO XML COM TRIAGEM E RECURSIVIDADE ---
+# --- MOTOR DE PROCESSAMENTO XML COM TRIAGEM E RECURSIVIDADE ---
 
 def buscar_tag_recursiva(tag_alvo, no):
     if no is None: return ""
@@ -84,8 +82,10 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            iest_item = buscar_tag_recursiva('IEST', det.find('.//ICMS'))
+            v_difal_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
+            v_fcp_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
             iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
+            iest_item = buscar_tag_recursiva('IEST', det.find('.//ICMS'))
             ie_final = iest_item if iest_item != "" else iest_no_xml
 
             linha = {
@@ -101,8 +101,8 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
                 "ORIGEM": buscar_tag_recursiva('orig', det.find('.//ICMS')),
                 "CST-ICMS": buscar_tag_recursiva('CST', det.find('.//ICMS')) or buscar_tag_recursiva('CSOSN', det.find('.//ICMS')),
-                "VAL-DIFAL": safe_float(buscar_tag_recursiva('vICMSUFDest', imp)) + safe_float(buscar_tag_recursiva('vFCPUFDest', imp)),
-                "VAL-FCP-DEST": safe_float(buscar_tag_recursiva('vFCPUFDest', imp)),
+                "VAL-DIFAL": v_difal_dest + v_fcp_dest,
+                "VAL-FCP-DEST": v_fcp_dest,
                 "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', imp)),
                 "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', imp)),
                 "VAL-FCP-ST": safe_float(buscar_tag_recursiva('vFCPST', imp)),
