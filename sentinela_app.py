@@ -6,24 +6,31 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS PARA EXTERMINAR ESPAÇOS BRANCOS E REPOR A LINHA LARANJA ---
+# --- ESTILO CSS CAMALEÃO (GAP EM CINZA IGUAL AO FUNDO) ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
+    
+    /* Cor de Fundo do Site (Cinza) */
     .stApp { background-color: #F0F2F6; }
+    
+    /* Sidebar */
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* MATA O ESPAÇADOR BRANCO (GAP) DO STREAMLIT */
-    .stVerticalBlock { gap: 0rem !important; }
-    div[data-testid="stVerticalBlock"] > div { padding: 0px !important; margin: 0px !important; }
+    /* PINTANDO O GAP E OS CONTAINERS COM O CINZA DO FUNDO */
+    [data-testid="stVerticalBlock"], 
+    [data-testid="stVerticalBlock"] > div,
+    .element-container { 
+        background-color: #F0F2F6 !important; 
+    }
 
     /* Cabeçalho */
-    .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 0px; }
+    .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 0px; background-color: #F0F2F6; }
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
 
-    /* A LINHA LARANJA FININHA QUE VOCÊ GOSTOU (COM GRADIENTE) */
+    /* A LINHA LARANJA FININHA QUE VOCÊ GOSTOU */
     .barra-laranja-fina {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
@@ -33,18 +40,20 @@ st.markdown("""
         border-radius: 10px;
     }
 
-    /* Cards Brancos */
+    /* CARDS BRANCOS (Os únicos que brilham no fundo cinza) */
     .card {
-        background-color: #FFFFFF;
+        background-color: #FFFFFF !important;
         padding: 25px;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
+        margin-bottom: 20px;
+        border: none !important;
     }
 
     h3 { color: #444444 !important; font-size: 1.1rem; border: none !important; margin-bottom: 10px !important; }
     h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 10px; }
 
+    /* Botão com Gradiente */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -53,14 +62,16 @@ st.markdown("""
         width: 100% !important;
         height: 3.5rem !important;
         border: none !important;
+        box-shadow: 0px 4px 10px rgba(255, 111, 0, 0.3) !important;
     }
 
     .status-container {
         padding: 15px;
         border-radius: 12px;
         border-left: 6px solid #FF6F00;
-        background-color: #FFFFFF;
-        margin-bottom: 15px;
+        background-color: #FFFFFF !important;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
     }
 
     section[data-testid="stFileUploadDropzone"] {
@@ -110,7 +121,7 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
-# --- CABEÇALHO COM A LINHA LARANJA ---
+# --- CABEÇALHO ---
 st.markdown("""
 <div class='titulo-container'>
     <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Auditoria Digital</span>
@@ -142,6 +153,7 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Status Bar
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
     if not verificar_base_github(cod_cliente):
@@ -150,6 +162,7 @@ if selecao:
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
         st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
 
+    # UPLOAD EM TRÊS COLUNAS
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
