@@ -12,13 +12,10 @@ st.markdown("""
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     
-    /* Fundo Cinza Geral */
     .stApp { background-color: #F0F2F6; }
     
-    /* Sidebar */
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* REMOVE QUALQUER BORDA, SOMBRA OU FUNDO BRANCO AUTOMÁTICO */
     [data-testid="stVerticalBlockBorderWrapper"],
     [data-testid="stVerticalBlock"],
     [data-testid="stVerticalBlock"] > div,
@@ -30,12 +27,10 @@ st.markdown("""
         padding: 0 !important;
     }
 
-    /* Cabeçalho Limpo */
     .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 5px; }
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
 
-    /* LINHA LARANJA FININHA QUE VOCÊ APROVOU */
     .barra-laranja-fina {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
@@ -44,7 +39,6 @@ st.markdown("""
         width: 100%;
     }
 
-    /* ESTILO DOS CAMPOS (Apenas onde entra dado fica branco) */
     .stSelectbox div[data-baseweb="select"], 
     section[data-testid="stFileUploadDropzone"] {
         background-color: #FFFFFF !important;
@@ -64,11 +58,10 @@ st.markdown("""
         border: none !important;
     }
 
-    /* Faixa de Status (Sem ser balão branco) */
     .status-container {
         padding: 12px;
         border-left: 5px solid #FF6F00;
-        background-color: #E8EAEE; /* Cinza um pouco mais escuro que o fundo */
+        background-color: #E8EAEE;
         border-radius: 5px;
         margin: 15px 0;
     }
@@ -88,11 +81,12 @@ def carregar_base_clientes():
             except: continue
     return pd.DataFrame()
 
-def verificar_base_github(cod_cliente):
+# FUNÇÃO DE VALIDAÇÃO GITHUB (Melhorada para aceitar subpastas)
+def verificar_arquivo_github(caminho_relativo):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
     if not token or not repo: return False
-    url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"
+    url = f"https://api.github.com/repos/{repo}/contents/{caminho_relativo}"
     headers = {"Authorization": f"token {token}"}
     try:
         res = requests.get(url, headers=headers, timeout=5)
@@ -111,7 +105,6 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
-# Cabeçalho Alinhado
 st.markdown(f"""
 <div class='titulo-container'>
     <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Auditoria Digital</span>
@@ -140,11 +133,15 @@ if selecao:
 
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
-    if not verificar_base_github(cod_cliente):
-        st.warning(f"⚠️ **Base de Impostos não encontrada:** O relatório será gerado sem as análises correspondentes.")
+    # Validação Bases Tributárias
+    if not verificar_arquivo_github(f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"):
+        st.warning(f"⚠️ **Base de Impostos não encontrada no GitHub.**")
     
-    if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
-        st.warning(f"⚠️ **Modelo RET não encontrado:** O relatório será gerado sem as análises correspondentes.")
+    # Validação RET MG
+    if is_ret:
+        # Verifica se o arquivo existe no GitHub na pasta RET/
+        if not verificar_arquivo_github(f"RET/{cod_cliente}-RET_MG.xlsx"):
+            st.warning(f"⚠️ **Modelo RET ({cod_cliente}) não encontrado no GitHub.**")
 
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
