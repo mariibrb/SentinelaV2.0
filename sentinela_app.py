@@ -144,9 +144,9 @@ if selecao:
     
     if is_ret:
         if verificar_arquivo_github(f"RET/{cod_cliente}-RET_MG.xlsx"):
-            st.success(f"✅ **Modelo RET ({cod_cliente}) localizado com sucesso!**")
+            st.success(f"✅ **Modelo RET localizado com sucesso!**")
         else:
-            st.warning(f"⚠️ **Modelo RET ({cod_cliente}) não encontrado.**")
+            st.warning(f"⚠️ **Modelo RET não encontrado.**")
 
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
