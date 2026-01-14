@@ -17,6 +17,7 @@ Para que o sistema localize as regras fiscais e os modelos de cada empresa autom
 
 Plaintext
 
+
 ├── Bases_Tributárias/
 │   └── 394-Bases_Tributarias.xlsx      # Regras de alíquotas e CST por cliente
 ├── RET/
@@ -29,15 +30,17 @@ Plaintext
 │   └── Clientes Ativos.xlsx            # Cadastro de CÓD e CNPJ dos clientes
 ├── sentinela_app.py                    # Interface do Usuário (Streamlit)
 └── sentinela_core.py                   # Motor de processamento fiscal
+
+
 🛠️ Configurações Técnicas Obrigatórias
 1. Limite de Upload (Arquivos Grandes)
 O arquivo .streamlit/config.toml deve conter as seguintes linhas para evitar erros com arquivos ZIP pesados:
 
-Ini, TOML
-
 [server]
 headless = true
 maxUploadSize = 1000
+
+
 2. Variáveis de Ambiente (Secrets)
 No painel do Streamlit Cloud, você deve configurar as Secrets para que o App acesse seu GitHub privado:
 
