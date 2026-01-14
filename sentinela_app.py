@@ -4,33 +4,29 @@ import requests
 from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
+st.set_page_config(
+    page_title="Sentinela | Auditoria Fiscal",
+    page_icon="🧡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- ESTILO CSS PREMIUM 2.0 (REFINADO) ---
+# --- ESTILO CSS AVANÇADO ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     .stApp { background-color: #F0F2F6; }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-right: 3px solid #FF6F00;
+    }
     
-    /* Títulos */
-    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; margin-bottom: 20px; }
+    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; }
     h3 { color: #444444 !important; font-size: 1.2rem; border-bottom: 2px solid #FF6F00; padding-bottom: 5px; margin-bottom: 15px; }
     h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 10px; }
 
-    /* Cards Brancos com Sombra */
-    .card {
-        background-color: #FFFFFF;
-        padding: 25px;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-    }
-
-    /* Botão com Gradiente */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -39,16 +35,33 @@ st.markdown("""
         width: 100% !important;
         height: 3.5rem !important;
         border: none !important;
-        box-shadow: 0px 4px 10px rgba(255, 111, 0, 0.3) !important;
-        transition: 0.3s;
+        box-shadow: 0px 4px 15px rgba(255, 111, 0, 0.3) !important;
+        transition: all 0.3s ease !important;
     }
-    .stButton > button:hover { transform: translateY(-2px); box-shadow: 0px 6px 15px rgba(255, 111, 0, 0.4) !important; }
+    .stButton > button:hover { transform: translateY(-2px) !important; }
 
-    /* Uploaders */
+    .card {
+        background-color: #FFFFFF;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+    }
+    
     section[data-testid="stFileUploadDropzone"] {
         border: 2px dashed #FF6F00 !important;
         background-color: #FFF9F5 !important;
         border-radius: 10px !important;
+    }
+    
+    /* Estilo para o Alerta de Info/Sucesso mais sofisticado */
+    .status-container {
+        padding: 20px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        border-left: 6px solid #FF6F00;
+        background-color: #FFFFFF;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.03);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -92,10 +105,10 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
-# --- CABEÇALHO ---
-st.markdown("<h1>SENTINELA</h1>", unsafe_allow_html=True)
+# --- CORPO PRINCIPAL ---
+st.markdown("<h1>SENTINELA <span style='color:#444; font-weight:300;'>| Auditoria Digital</span></h1>", unsafe_allow_html=True)
 
-# SELEÇÃO E CONFIGURAÇÃO EM CARDS
+# PASSO 1 E 2
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
@@ -103,7 +116,7 @@ with col_a:
     st.markdown("### 👣 Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
         opcoes = [f"{int(l['CÓD'])} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
-        selecao = st.selectbox("Escolha o cliente na lista", [""] + opcoes)
+        selecao = st.selectbox("Selecione o cliente na lista", [""] + opcoes)
     else:
         st.error("Base de clientes não carregada.")
         selecao = None
@@ -121,16 +134,21 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ÁREA VERDE DE INFORMAÇÕES COM ALERTAS INTELIGENTES
-    st.info(f"📍 **Auditando:** {dados_empresa['RAZÃO SOCIAL']} | **CNPJ:** {cnpj_auditado}")
+    # --- NOVO PAINEL DE STATUS (Substituindo o aviso verde antigo) ---
+    st.markdown(f"""
+    <div class='status-container'>
+        <span style='font-size:1.1rem;'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</span>
+    </div>
+    """, unsafe_allow_html=True)
     
+    # Verificações de Base e RET (Avisos Amarelos elegantes se faltar algo)
     if not verificar_base_github(cod_cliente):
-        st.warning(f"⚠️ **Base de Impostos não encontrada:** O relatório será gerado sem as análises de alíquotas correspondentes.")
+        st.warning(f"⚠️ **Base de Impostos não encontrada:** A planilha será gerada, mas sem as análises correspondentes de alíquotas.")
     
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
-        st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada sem as análises correspondentes de apuração.")
+        st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes de apuração.")
 
-    # UPLOAD EM TRÊS COLUNAS (CARDS)
+    # PASSO 3: UPLOAD EM CARDS (Limpo, sem barras extras)
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
@@ -159,11 +177,11 @@ if selecao:
     with col_btn:
         if st.button("🚀 GERAR RELATÓRIO"):
             if xmls and regime:
-                with st.spinner("Processando..."):
+                with st.spinner("Processando auditoria..."):
                     try:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         st.balloons()
-                        st.success("Auditoria Concluída!")
-                        st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
-                    except Exception as e: st.error(f"Erro: {e}")
+                        st.success("Auditoria Finalizada com Sucesso! 🧡")
+                        st.download_button("💾 BAIXAR RELATÓRIO AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                    except Exception as e: st.error(f"Erro Crítico: {e}")
