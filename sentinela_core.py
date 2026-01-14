@@ -48,15 +48,15 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML ---
+# --- MOTOR DE PROCESSAMENTO XML COM TRIAGEM E RECURSIVIDADE ---
 
-def processar_conteudo_xml(content, dados_lista):
+def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
         xml_str = content.decode('utf-8', errors='replace')
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
-        def buscar_tag_recursiva(tag_alvo, no):
+        def buscar_tag(tag_alvo, no):
             if no is None: return ""
             for elemento in no.iter():
                 if elemento.tag.split('}')[-1] == tag_alvo:
@@ -66,65 +66,80 @@ def processar_conteudo_xml(content, dados_lista):
         inf = root.find('.//infNFe')
         if inf is None: return 
         
-        iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
+        ide = root.find('.//ide')
+        tp_nf = buscar_tag('tpNF', ide) # 0=Entrada, 1=Saída
         emit = root.find('.//emit')
         dest = root.find('.//dest')
-        chave = inf.attrib.get('Id', '')[3:] if inf is not None else ""
-        n_nf = buscar_tag_recursiva('nNF', root)
+        
+        cnpj_emit = re.sub(r'\D', '', buscar_tag('CNPJ', emit))
+        cnpj_alvo = re.sub(r'\D', '', str(cnpj_empresa_auditada))
+        
+        # LÓGICA DE TRIAGEM AUTOMÁTICA
+        # Saída: CNPJ emitente é o meu E tipo da nota é 1 (Saída)
+        # Entrada: Emitente é terceiro OU sou o emitente mas tipo é 0 (Entrada/Devolução)
+        if cnpj_emit == cnpj_alvo and tp_nf == '1':
+            tipo_operacao = "SAIDA"
+        else:
+            tipo_operacao = "ENTRADA"
+
+        chave = inf.attrib.get('Id', '')[3:]
+        n_nf = buscar_tag('nNF', ide)
 
         for det in root.findall('.//det'):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            v_difal_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
-            v_fcp_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
-            
-            iest_item = buscar_tag_recursiva('IEST', det.find('.//ICMS'))
-            ie_final = iest_item if iest_item != "" else iest_no_xml
-
+            # Dados básicos para o gerencial e auditorias
             linha = {
+                "TIPO_SISTEMA": tipo_operacao,
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
-                "CNPJ_EMIT": buscar_tag_recursiva('CNPJ', emit),
-                "CNPJ_DEST": buscar_tag_recursiva('CNPJ', dest),
-                "UF_EMIT": buscar_tag_recursiva('UF', emit),
-                "UF_DEST": buscar_tag_recursiva('UF', dest),
-                "CFOP": buscar_tag_recursiva('CFOP', prod),
-                "NCM": re.sub(r'\D', '', buscar_tag_recursiva('NCM', prod)).zfill(8),
-                "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
-                "ORIGEM": buscar_tag_recursiva('orig', det.find('.//ICMS')),
-                "CST-ICMS": buscar_tag_recursiva('CST', det.find('.//ICMS')) or buscar_tag_recursiva('CSOSN', det.find('.//ICMS')),
-                "VAL-DIFAL": v_difal_dest + v_fcp_dest,
-                "VAL-FCP-DEST": v_fcp_dest,
-                "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', imp)),
-                "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', imp)),
-                "VAL-FCP-ST": safe_float(buscar_tag_recursiva('vFCPST', imp)),
-                "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
-                "IE_SUBST": str(ie_final).strip(),
-                "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
-                "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp))
+                "CNPJ_EMIT": buscar_tag('CNPJ', emit),
+                "CNPJ_DEST": buscar_tag('CNPJ', dest),
+                "UF_EMIT": buscar_tag('UF', emit),
+                "UF_DEST": buscar_tag('UF', dest),
+                "CFOP": buscar_tag('CFOP', prod),
+                "NCM": re.sub(r'\D', '', buscar_tag('NCM', prod)).zfill(8),
+                "VPROD": safe_float(buscar_tag('vProd', prod)),
+                "CST-ICMS": buscar_tag('CST', det.find('.//ICMS')) or buscar_tag('CSOSN', det.find('.//ICMS')),
+                "VAL-ICMS-ST": safe_float(buscar_tag('vICMSST', imp)),
+                "BC-ICMS-ST": safe_float(buscar_tag('vBCST', imp)),
+                "VAL-FCP-ST": safe_float(buscar_tag('vFCPST', imp)),
+                "IE_SUBST": buscar_tag('IEST', root) or buscar_tag('IE_SUBST', root)
             }
             dados_lista.append(linha)
     except: pass
 
-def extrair_dados_xml(files):
+def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
+    """Lê arquivos e descompacta ZIPs recursivamente (ZIP dentro de ZIP)"""
     dados_lista = []
-    if not files: return pd.DataFrame()
+    if not files: return pd.DataFrame(), pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
+    
+    def ler_zip(zip_data):
+        with zipfile.ZipFile(zip_data) as z:
+            for filename in z.namelist():
+                if filename.lower().endswith('.xml'):
+                    with z.open(filename) as f:
+                        processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
+                elif filename.lower().endswith('.zip'):
+                    # Recursividade para ZIP dentro de ZIP
+                    with z.open(filename) as nested_zip:
+                        nested_data = io.BytesIO(nested_zip.read())
+                        ler_zip(nested_data)
+
     for f in lista_trabalho:
-        try:
-            if f.name.lower().endswith('.xml'):
-                f.seek(0)
-                processar_conteudo_xml(f.read(), dados_lista)
-            elif f.name.lower().endswith('.zip'):
-                f.seek(0)
-                with zipfile.ZipFile(f) as z:
-                    for filename in z.namelist():
-                        if filename.lower().endswith('.xml'):
-                            with z.open(filename) as xml_file:
-                                processar_conteudo_xml(xml_file.read(), dados_lista)
-        except: continue
-    return pd.DataFrame(dados_lista)
+        if f.name.lower().endswith('.xml'):
+            f.seek(0); processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
+        elif f.name.lower().endswith('.zip'):
+            f.seek(0); ler_zip(f)
+            
+    df_total = pd.DataFrame(dados_lista)
+    if df_total.empty: return pd.DataFrame(), pd.DataFrame()
+    
+    df_e = df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy()
+    df_s = df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
+    return df_e, df_s
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
@@ -141,25 +156,19 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try:
                 raw_content = f.read().decode('latin1', errors='replace')
                 lines = raw_content.splitlines()
-                data_rows = []
-                for line in lines:
-                    if not line.strip(): continue
-                    parts = re.split(r'\t|;', line)
-                    if len(parts) > len(colunas_alvo):
-                        parts = parts[:len(colunas_alvo)]
-                    elif len(parts) < len(colunas_alvo):
-                        parts.extend([""] * (len(colunas_alvo) - len(parts)))
-                    data_rows.append(parts)
+                data_rows = [re.split(r'\t|;', line) for line in lines if line.strip()]
                 df = pd.DataFrame(data_rows, columns=colunas_alvo)
+                # Conversão numérica automática
+                for col in df.columns:
+                    if any(key in col.upper() for key in ['VLR', 'BC', 'VAL', 'VC', 'QTDE', 'VUNIT', 'ICMS', 'PIS', 'COF', 'IPI']):
+                        df[col] = df[col].apply(safe_float)
                 dfs.append(df)
-            except Exception as e:
-                st.error(f"Erro na leitura manual de {f.name}: {e}")
+            except: pass
         return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
-    # 1. GERAÇÃO DO RELATÓRIO COM XLSXWRITER (Tabelas e Auditorias)
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
         try: gerar_aba_resumo(writer)
@@ -172,76 +181,39 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             header = df.columns.tolist()
             data = df.values.tolist()
             worksheet.add_table(0, 0, len(df), len(df.columns) - 1, {
-                'data': data,
-                'columns': [{'header': col} for col in header],
-                'name': table_name,
-                'style': 'TableStyleMedium2'
+                'data': data, 'columns': [{'header': col} for col in header],
+                'name': table_name, 'style': 'TableStyleMedium2'
             })
 
         gravar_df_como_tabela(df_ger_ent, 'GERENCIAL_ENTRADAS', 'TabelaEntradas')
         gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
 
         if not df_xs.empty:
-            st_map = {}
-            if as_f:
-                try:
-                    for f in (as_f if isinstance(as_f, list) else [as_f]):
-                        f.seek(0)
-                        df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
-                        df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
-                        st_map.update(df_a.set_index(0)[5].to_dict())
-                except: pass
-            
-            df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
-            try:
-                gerar_resumo_uf(df_xs, writer, df_xe)
-            except Exception as e:
-                st.warning(f"Aba DIFAL_ST_FECP falhou: {e}")
+            try: gerar_resumo_uf(df_xs, writer, df_xe)
+            except: pass
 
-    # 2. SE FOR RET, MESCLA COM O ARQUIVO DE BASE NA PASTA /RET
+    # MESCLAGEM DO ARQUIVO RET USANDO O CÓDIGO DA EMPRESA
     if is_ret:
         try:
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
-            
             if os.path.exists(caminho_modelo):
                 output.seek(0)
                 wb_final = openpyxl.load_workbook(output)
                 wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
-
                 for sheet_name in wb_modelo.sheetnames:
-                    # Não copiar abas que já foram geradas (Entradas e Saídas)
                     if sheet_name not in ['GERENCIAL_ENTRADAS', 'GERENCIAL_SAIDAS']:
-                        source_sheet = wb_modelo[sheet_name]
-                        if sheet_name in wb_final.sheetnames:
-                            target_sheet = wb_final[sheet_name]
-                        else:
-                            target_sheet = wb_final.create_sheet(sheet_name)
-
-                        # Cópia profunda de células, fórmulas e estilos
-                        for row in source_sheet.iter_rows():
+                        source = wb_modelo[sheet_name]; target = wb_final.create_sheet(sheet_name)
+                        for row in source.iter_rows():
                             for cell in row:
-                                new_cell = target_sheet.cell(row=cell.row, column=cell.column, value=cell.value)
+                                new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
                                 if cell.has_style:
-                                    new_cell.font = copy(cell.font)
-                                    new_cell.border = copy(cell.border)
-                                    new_cell.fill = copy(cell.fill)
-                                    new_cell.number_format = copy(cell.number_format)
-                                    new_cell.alignment = copy(cell.alignment)
-                        
-                        # Replicar as larguras das colunas
-                        for col_name, col_dim in source_sheet.column_dimensions.items():
-                            target_sheet.column_dimensions[col_name].width = col_dim.width
-
-                output_final = io.BytesIO()
-                wb_final.save(output_final)
-                return output_final.getvalue()
-            else:
-                st.error(f"Arquivo modelo RET não encontrado para o código {cod_cliente} em: {caminho_modelo}")
-        except Exception as e:
-            st.error(f"Erro na mesclagem das abas do arquivo de base: {e}")
+                                    new_cell.font, new_cell.border, new_cell.fill, new_cell.number_format, new_cell.alignment = copy(cell.font), copy(cell.border), copy(cell.fill), copy(cell.number_format), copy(cell.alignment)
+                        for col, dim in source.column_dimensions.items(): target.column_dimensions[col].width = dim.width
+                output_final = io.BytesIO(); wb_final.save(output_final); return output_final.getvalue()
+        except: pass
             
     return output.getvalue()
