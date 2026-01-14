@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS PARA EXTERMINAR BARRAS BRANCAS E CRIAR A LINHA LARANJA ---
+# --- CSS RADICAL: SEM ESPAÇOS, SEM BARRAS, SEM BORDAS ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -14,28 +14,29 @@ st.markdown("""
     .stApp { background-color: #F0F2F6; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* Remove o gap (espaço) que o Streamlit cria entre os blocos */
+    /* Mata o espaçamento nativo do Streamlit */
     .stVerticalBlock { gap: 0rem !important; }
     div[data-testid="stVerticalBlock"] > div { padding: 0px !important; margin: 0px !important; }
+    [data-testid="stMetricWidget"] { background-color: transparent !important; }
 
     h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; margin-bottom: 20px; }
-    h3 { color: #444444 !important; font-size: 1.1rem; border-bottom: none !important; margin-bottom: 10px !important; }
-
-    /* CARD ÚNICO E LIMPO */
+    
+    /* Card Premium */
     .card {
         background-color: #FFFFFF;
         padding: 20px;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin: 10px 0px;
+        margin: 5px 0px;
+        border: none !important;
     }
 
-    /* A LINHA LARANJA FININHA REAL */
-    .divisor-laranja {
+    /* LINHA LARANJA FININHA REAL */
+    .linha-fina {
         border-top: 1.5px solid #FF6F00;
-        margin: 15px 0px;
         width: 100%;
-        opacity: 0.8;
+        margin: 10px 0;
+        display: block;
     }
 
     .stButton > button {
@@ -53,9 +54,12 @@ st.markdown("""
         border-radius: 12px;
         border-left: 6px solid #FF6F00;
         background-color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-        margin: 10px 0px;
+        margin: 5px 0px;
     }
+    
+    /* Limpeza de títulos */
+    h3 { color: #444444 !important; font-size: 1.1rem; border: none !important; margin: 0 !important; padding: 0 !important; }
+    h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -67,6 +71,7 @@ def carregar_base_clientes():
             try:
                 df = pd.read_csv(caminho) if caminho.endswith('.csv') else pd.read_excel(caminho)
                 df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
+                # Blindagem contra o .0
                 df['CÓD'] = df['CÓD'].apply(lambda x: str(int(float(x))))
                 return df
             except: continue
@@ -101,13 +106,12 @@ st.markdown("<h1>SENTINELA</h1>", unsafe_allow_html=True)
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("### 👣 Passo 1: Seleção da Empresa")
+    st.markdown('<div class="card"><h3>👣 Passo 1: Seleção da Empresa</h3>', unsafe_allow_html=True)
     if not df_clientes.empty:
         opcoes = [f"{l['CÓD']} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
-        selecao = st.selectbox("Escolha", [""] + opcoes, label_visibility="collapsed")
+        selecao = st.selectbox("E", [""] + opcoes, label_visibility="collapsed")
     else: selecao = None
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if selecao:
     cod_cliente = selecao.split(" - ")[0].strip()
@@ -115,14 +119,13 @@ if selecao:
     cnpj_auditado = dados_empresa['CNPJ']
 
     with col_b:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("### ⚖️ Passo 2: Configuração")
-        regime = st.selectbox("Regime", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
+        st.markdown('<div class="card"><h3>⚖️ Passo 2: Configuração</h3>', unsafe_allow_html=True)
+        regime = st.selectbox("R", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
         is_ret = st.toggle("Habilitar MG (RET)")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # LINHA LARANJA FININHA
-    st.markdown("<div class='divisor-laranja'></div>", unsafe_allow_html=True)
+    # --- LINHA LARANJA FININHA ---
+    st.markdown('<div class="linha-fina"></div>', unsafe_allow_html=True)
 
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
@@ -132,34 +135,31 @@ if selecao:
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
         st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
 
-    # LINHA LARANJA FININHA
-    st.markdown("<div class='divisor-laranja'></div>", unsafe_allow_html=True)
+    # --- LINHA LARANJA FININHA ---
+    st.markdown('<div class="linha-fina"></div>', unsafe_allow_html=True)
 
-    st.markdown("### 📥 Passo 3: Central de Arquivos")
+    st.markdown('<h3>📥 Passo 3: Central de Arquivos</h3>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     
     with c1:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("#### 📄 XML")
-        xmls = st.file_uploader("XML", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
+        st.markdown("<div class='card'>#### 📄 XML", unsafe_allow_html=True)
+        xmls = st.file_uploader("X", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("#### 📥 Entradas")
-        ge = st.file_uploader("Gerencial", type=['csv', 'xlsx'], accept_multiple_files=True, key="ge")
-        ae = st.file_uploader("Autenticidade", type=['xlsx', 'csv'], accept_multiple_files=True, key="ae")
+        st.markdown("<div class='card'>#### 📥 Entradas", unsafe_allow_html=True)
+        ge = st.file_uploader("G", type=['csv', 'xlsx'], accept_multiple_files=True, key="ge")
+        ae = st.file_uploader("A", type=['xlsx', 'csv'], accept_multiple_files=True, key="ae")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c3:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("#### 📤 Saídas")
-        gs = st.file_uploader("Gerencial ", type=['csv', 'xlsx'], accept_multiple_files=True, key="gs")
-        as_f = st.file_uploader("Autenticidade ", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
+        st.markdown("<div class='card'>#### 📤 Saídas", unsafe_allow_html=True)
+        gs = st.file_uploader("S", type=['csv', 'xlsx'], accept_multiple_files=True, key="gs")
+        as_f = st.file_uploader("F", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # LINHA LARANJA FININHA
-    st.markdown("<div class='divisor-laranja'></div>", unsafe_allow_html=True)
+    # --- LINHA LARANJA FININHA ---
+    st.markdown('<div class="linha-fina"></div>', unsafe_allow_html=True)
 
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
