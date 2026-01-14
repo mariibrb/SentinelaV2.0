@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS RADICAL PARA MATAR BARRAS BRANCAS ---
+# --- ESTILO CSS PARA EXTERMINAR BARRAS BRANCAS E CRIAR A LINHA LARANJA ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -14,35 +14,28 @@ st.markdown("""
     .stApp { background-color: #F0F2F6; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* Remove bordas de widgets e divisores do Streamlit */
-    div[data-testid="stVerticalBlock"] > div { border: none !important; margin: 0 !important; padding: 0 !important; }
-    hr { border: none !important; }
+    /* Remove o gap (espaço) que o Streamlit cria entre os blocos */
+    .stVerticalBlock { gap: 0rem !important; }
+    div[data-testid="stVerticalBlock"] > div { padding: 0px !important; margin: 0px !important; }
 
-    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; }
-    
-    /* Título sem linha branca embaixo */
-    h3 { 
-        color: #444444 !important; 
-        font-size: 1.1rem; 
-        border-bottom: none !important; 
-        margin-bottom: 5px !important; 
-    }
+    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; margin-bottom: 20px; }
+    h3 { color: #444444 !important; font-size: 1.1rem; border-bottom: none !important; margin-bottom: 10px !important; }
 
+    /* CARD ÚNICO E LIMPO */
     .card {
         background-color: #FFFFFF;
-        padding: 25px;
+        padding: 20px;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 5px;
+        margin: 10px 0px;
     }
 
-    /* LINHA LARANJA FININHA CUSTOMIZADA */
-    .linha-laranja {
-        height: 1.5px;
-        background-color: #FF6F00;
-        margin: 15px auto;
-        width: 95%;
-        border-radius: 2px;
+    /* A LINHA LARANJA FININHA REAL */
+    .divisor-laranja {
+        border-top: 1.5px solid #FF6F00;
+        margin: 15px 0px;
+        width: 100%;
+        opacity: 0.8;
     }
 
     .stButton > button {
@@ -57,10 +50,11 @@ st.markdown("""
 
     .status-container {
         padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 5px;
+        border-radius: 12px;
         border-left: 6px solid #FF6F00;
         background-color: #FFFFFF;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        margin: 10px 0px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -73,7 +67,6 @@ def carregar_base_clientes():
             try:
                 df = pd.read_csv(caminho) if caminho.endswith('.csv') else pd.read_excel(caminho)
                 df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
-                # TRATAMENTO PARA REMOVER O .0 (Converte para int e depois string)
                 df['CÓD'] = df['CÓD'].apply(lambda x: str(int(float(x))))
                 return df
             except: continue
@@ -112,10 +105,8 @@ with col_a:
     st.markdown("### 👣 Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
         opcoes = [f"{l['CÓD']} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
-        selecao = st.selectbox("Selecione", [""] + opcoes, label_visibility="collapsed")
-    else:
-        st.error("Base de clientes não carregada.")
-        selecao = None
+        selecao = st.selectbox("Escolha", [""] + opcoes, label_visibility="collapsed")
+    else: selecao = None
     st.markdown("</div>", unsafe_allow_html=True)
 
 if selecao:
@@ -130,8 +121,8 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # LINHA LARANJA
-    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
+    # LINHA LARANJA FININHA
+    st.markdown("<div class='divisor-laranja'></div>", unsafe_allow_html=True)
 
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
@@ -141,8 +132,8 @@ if selecao:
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
         st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
 
-    # LINHA LARANJA
-    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
+    # LINHA LARANJA FININHA
+    st.markdown("<div class='divisor-laranja'></div>", unsafe_allow_html=True)
 
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
@@ -167,7 +158,8 @@ if selecao:
         as_f = st.file_uploader("Autenticidade ", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
+    # LINHA LARANJA FININHA
+    st.markdown("<div class='divisor-laranja'></div>", unsafe_allow_html=True)
 
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
