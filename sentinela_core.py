@@ -72,7 +72,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
         cnpj_emit = re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', emit))
         cnpj_alvo = re.sub(r'\D', '', str(cnpj_empresa_auditada))
         
-        # TRIAGEM AUTOMÁTICA
+        # TRIAGEM AUTOMÁTICA (CNPJ + TIPO DE NOTA)
         tipo_operacao = "SAIDA" if (cnpj_emit == cnpj_alvo and tp_nf == '1') else "ENTRADA"
 
         chave = inf.attrib.get('Id', '')[3:]
