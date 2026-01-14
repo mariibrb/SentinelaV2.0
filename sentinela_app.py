@@ -11,7 +11,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILO CSS AVANÇADO ---
+# --- ESTILO CSS PARA ELIMINAR AS LINHAS E BARRAS ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -23,10 +23,36 @@ st.markdown("""
         border-right: 3px solid #FF6F00;
     }
     
-    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; }
-    h3 { color: #444444 !important; font-size: 1.2rem; border-bottom: 2px solid #FF6F00; padding-bottom: 5px; margin-bottom: 15px; }
-    h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 10px; }
+    /* Títulos Principais - Sem a barra laranja embaixo */
+    h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; margin-bottom: 25px; }
+    
+    /* Títulos dos Passos - REMOVIDO BORDER-BOTTOM (A linha que você riscou) */
+    h3 { 
+        color: #444444 !important; 
+        font-size: 1.1rem; 
+        border-bottom: none !important; /* Remove a linha branca/cinza do Streamlit */
+        padding-bottom: 0px !important; 
+        margin-bottom: 10px !important; 
+    }
+    
+    h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 5px; }
 
+    /* Card Principal sem divisórias internas */
+    .card {
+        background-color: #FFFFFF;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+        border: none !important;
+    }
+
+    /* Remover fundos de widgets que criam "caixas" dentro de caixas */
+    [data-testid="stFileUploader"], [data-testid="stSelectbox"] {
+        background-color: transparent !important;
+    }
+    
+    /* Botão Premium */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -35,34 +61,20 @@ st.markdown("""
         width: 100% !important;
         height: 3.5rem !important;
         border: none !important;
-        box-shadow: 0px 4px 15px rgba(255, 111, 0, 0.3) !important;
-        transition: all 0.3s ease !important;
     }
-    .stButton > button:hover { transform: translateY(-2px) !important; }
 
-    .card {
-        background-color: #FFFFFF;
-        padding: 25px;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-    }
-    
-    section[data-testid="stFileUploadDropzone"] {
-        border: 2px dashed #FF6F00 !important;
-        background-color: #FFF9F5 !important;
-        border-radius: 10px !important;
-    }
-    
-    /* Estilo para o Alerta de Info/Sucesso mais sofisticado */
+    /* Status Container - Limpo */
     .status-container {
-        padding: 20px;
-        border-radius: 12px;
-        margin-bottom: 20px;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 15px;
         border-left: 6px solid #FF6F00;
         background-color: #FFFFFF;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
     }
+    
+    /* Remove espaçamentos inúteis entre elementos do Streamlit */
+    .element-container { margin-bottom: 0px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -97,7 +109,7 @@ df_clientes = carregar_base_clientes()
 with st.sidebar:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     def criar_gabarito():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -106,9 +118,8 @@ with st.sidebar:
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CORPO PRINCIPAL ---
-st.markdown("<h1>SENTINELA <span style='color:#444; font-weight:300;'>| Auditoria Digital</span></h1>", unsafe_allow_html=True)
+st.markdown("<h1>SENTINELA</h1>", unsafe_allow_html=True)
 
-# PASSO 1 E 2
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
@@ -116,9 +127,9 @@ with col_a:
     st.markdown("### 👣 Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
         opcoes = [f"{int(l['CÓD'])} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
-        selecao = st.selectbox("Selecione o cliente na lista", [""] + opcoes)
+        selecao = st.selectbox("Selecione na lista abaixo", [""] + opcoes, label_visibility="collapsed")
     else:
-        st.error("Base de clientes não carregada.")
+        st.error("Base de clientes não encontrada.")
         selecao = None
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -130,32 +141,27 @@ if selecao:
     with col_b:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("### ⚖️ Passo 2: Configuração")
-        regime = st.selectbox("Regime Tributário", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"])
+        regime = st.selectbox("Regime Tributário", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- NOVO PAINEL DE STATUS (Substituindo o aviso verde antigo) ---
-    st.markdown(f"""
-    <div class='status-container'>
-        <span style='font-size:1.1rem;'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</span>
-    </div>
-    """, unsafe_allow_html=True)
+    # Status Bar
+    st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
-    # Verificações de Base e RET (Avisos Amarelos elegantes se faltar algo)
+    # Alertas Inteligentes
     if not verificar_base_github(cod_cliente):
-        st.warning(f"⚠️ **Base de Impostos não encontrada:** A planilha será gerada, mas sem as análises correspondentes de alíquotas.")
+        st.warning(f"⚠️ **Base de Impostos não encontrada:** O relatório será gerado, mas sem as análises correspondentes.")
     
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
-        st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes de apuração.")
+        st.warning(f"⚠️ **Modelo RET não encontrado:** O relatório será gerado, mas sem as análises correspondentes.")
 
-    # PASSO 3: UPLOAD EM CARDS (Limpo, sem barras extras)
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
     with c1:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("#### 📄 XML")
-        xmls = st.file_uploader("Arquivos soltos ou ZIP", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
+        xmls = st.file_uploader("Upload", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
@@ -175,13 +181,12 @@ if selecao:
     st.markdown("<br>", unsafe_allow_html=True)
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
-        if st.button("🚀 GERAR RELATÓRIO"):
+        if st.button("🚀 INICIAR AUDITORIA"):
             if xmls and regime:
-                with st.spinner("Processando auditoria..."):
+                with st.spinner("Processando..."):
                     try:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         st.balloons()
-                        st.success("Auditoria Finalizada com Sucesso! 🧡")
-                        st.download_button("💾 BAIXAR RELATÓRIO AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
-                    except Exception as e: st.error(f"Erro Crítico: {e}")
+                        st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                    except Exception as e: st.error(f"Erro: {e}")
