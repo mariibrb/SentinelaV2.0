@@ -4,55 +4,44 @@ import requests
 from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(
-    page_title="Sentinela | Auditoria Fiscal",
-    page_icon="🧡",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS PARA ELIMINAR AS LINHAS E BARRAS ---
+# --- ESTILO CSS PREMIUM 2.0 (ULTRA CLEAN + BARRA LARANJA) ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     .stApp { background-color: #F0F2F6; }
+    [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    [data-testid="stSidebar"] {
-        background-color: #FFFFFF;
-        border-right: 3px solid #FF6F00;
-    }
-    
-    /* Títulos Principais - Sem a barra laranja embaixo */
     h1 { color: #FF6F00 !important; font-family: 'Segoe UI', sans-serif; font-weight: 800; text-align: center; margin-bottom: 25px; }
     
-    /* Títulos dos Passos - REMOVIDO BORDER-BOTTOM (A linha que você riscou) */
+    /* Títulos dos Passos sem divisores brancos */
     h3 { 
         color: #444444 !important; 
         font-size: 1.1rem; 
-        border-bottom: none !important; /* Remove a linha branca/cinza do Streamlit */
+        border-bottom: none !important; 
         padding-bottom: 0px !important; 
         margin-bottom: 10px !important; 
     }
-    
     h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 5px; }
 
-    /* Card Principal sem divisórias internas */
     .card {
         background-color: #FFFFFF;
-        padding: 20px;
+        padding: 25px;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
-        border: none !important;
+        margin-bottom: 10px;
     }
 
-    /* Remover fundos de widgets que criam "caixas" dentro de caixas */
-    [data-testid="stFileUploader"], [data-testid="stSelectbox"] {
-        background-color: transparent !important;
+    /* A BARRA LARANJA FININHA */
+    hr {
+        margin: 15px 0px !important;
+        border: 0;
+        height: 1.5px;
+        background-image: linear-gradient(to right, rgba(255, 111, 0, 0), rgba(255, 111, 0, 0.75), rgba(255, 111, 0, 0));
     }
-    
-    /* Botão Premium */
+
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -63,22 +52,24 @@ st.markdown("""
         border: none !important;
     }
 
-    /* Status Container - Limpo */
     .status-container {
         padding: 15px;
         border-radius: 10px;
-        margin-bottom: 15px;
+        margin-bottom: 10px;
         border-left: 6px solid #FF6F00;
         background-color: #FFFFFF;
         box-shadow: 0 2px 8px rgba(0,0,0,0.02);
     }
     
-    /* Remove espaçamentos inúteis entre elementos do Streamlit */
-    .element-container { margin-bottom: 0px !important; }
+    section[data-testid="stFileUploadDropzone"] {
+        border: 2px dashed #FF6F00 !important;
+        background-color: #FFF9F5 !important;
+        border-radius: 10px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- CARREGAMENTO DA BASE ---
+# --- CARREGAMENTO DA BASE DE CLIENTES ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
     caminhos = [".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv", ".streamlit/Clientes Ativos.xlsx"]
@@ -87,16 +78,18 @@ def carregar_base_clientes():
             try:
                 df = pd.read_csv(caminho) if caminho.endswith('.csv') else pd.read_excel(caminho)
                 df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
-                df['CÓD'] = df['CÓD'].astype(int)
+                df['CÓD'] = df['CÓD'].astype(str).str.strip()
                 return df
             except: continue
     return pd.DataFrame()
 
+# --- VERIFICAÇÃO DE BASE NO GITHUB ---
 def verificar_base_github(cod_cliente):
     token = st.secrets.get("GITHUB_TOKEN")
     repo = st.secrets.get("GITHUB_REPO")
     if not token or not repo: return False
-    url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias/{cod_cliente}-BASE.xlsx"
+    cod_limpo = str(cod_cliente).strip()
+    url = f"https://api.github.com/repos/{repo}/contents/Bases_Tributárias/{cod_limpo}-Bases_Tributarias.xlsx"
     headers = {"Authorization": f"token {token}"}
     try:
         res = requests.get(url, headers=headers, timeout=5)
@@ -105,7 +98,6 @@ def verificar_base_github(cod_cliente):
 
 df_clientes = carregar_base_clientes()
 
-# --- SIDEBAR ---
 with st.sidebar:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
@@ -117,24 +109,24 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
-# --- CORPO PRINCIPAL ---
 st.markdown("<h1>SENTINELA</h1>", unsafe_allow_html=True)
 
+# --- SELEÇÃO ---
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("### 👣 Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
-        opcoes = [f"{int(l['CÓD'])} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
-        selecao = st.selectbox("Selecione na lista abaixo", [""] + opcoes, label_visibility="collapsed")
+        opcoes = [f"{l['CÓD']} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
+        selecao = st.selectbox("Selecione o cliente na lista", [""] + opcoes, label_visibility="collapsed")
     else:
-        st.error("Base de clientes não encontrada.")
+        st.error("Base de clientes não carregada.")
         selecao = None
     st.markdown("</div>", unsafe_allow_html=True)
 
 if selecao:
-    cod_cliente = int(selecao.split(" - ")[0])
+    cod_cliente = selecao.split(" - ")[0].strip()
     dados_empresa = df_clientes[df_clientes['CÓD'] == cod_cliente].iloc[0]
     cnpj_auditado = dados_empresa['CNPJ']
 
@@ -145,15 +137,19 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Status Bar
+    # BARRA LARANJA ENTRE PASSOS 2 E STATUS
+    st.markdown("<hr>", unsafe_allow_html=True)
+
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
-    # Alertas Inteligentes
     if not verificar_base_github(cod_cliente):
-        st.warning(f"⚠️ **Base de Impostos não encontrada:** O relatório será gerado, mas sem as análises correspondentes.")
+        st.warning(f"⚠️ **Base de Impostos não encontrada:** A planilha será gerada, mas sem as análises correspondentes.")
     
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
-        st.warning(f"⚠️ **Modelo RET não encontrado:** O relatório será gerado, mas sem as análises correspondentes.")
+        st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
+
+    # BARRA LARANJA ENTRE STATUS E PASSO 3
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
@@ -178,15 +174,17 @@ if selecao:
         as_f = st.file_uploader("Autenticidade ", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    # BARRA LARANJA ANTES DO BOTÃO FINAL
+    st.markdown("<hr>", unsafe_allow_html=True)
+
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
-        if st.button("🚀 INICIAR AUDITORIA"):
+        if st.button("🚀 GERAR RELATÓRIO"):
             if xmls and regime:
                 with st.spinner("Processando..."):
                     try:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         st.balloons()
-                        st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                        st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                     except Exception as e: st.error(f"Erro: {e}")
