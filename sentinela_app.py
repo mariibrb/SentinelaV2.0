@@ -110,7 +110,7 @@ with st.sidebar:
 # --- CONTEÚDO PRINCIPAL ---
 st.markdown(f"""
 <div class='titulo-container'>
-    <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Auditoria Digital</span>
+    <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Análise Tributária</span>
     <div class='barra-laranja-fina'></div>
 </div>
 """, unsafe_allow_html=True)
