@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS PREMIUM 2.0 ---
+# --- ESTILO CSS PREMIUM 2.0 (REFINADO) ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -93,7 +93,7 @@ with st.sidebar:
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CABEÇALHO ---
-st.markdown("<h1>SENTINELA <span style='color:#444; font-weight:300;'>| Auditoria Digital</span></h1>", unsafe_allow_html=True)
+st.markdown("<h1>SENTINELA</h1>", unsafe_allow_html=True)
 
 # SELEÇÃO E CONFIGURAÇÃO EM CARDS
 col_a, col_b = st.columns([2, 1])
@@ -121,14 +121,14 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ÁREA DE INFORMAÇÕES E ALERTAS
+    # ÁREA VERDE DE INFORMAÇÕES COM ALERTAS INTELIGENTES
     st.info(f"📍 **Auditando:** {dados_empresa['RAZÃO SOCIAL']} | **CNPJ:** {cnpj_auditado}")
     
     if not verificar_base_github(cod_cliente):
-        st.warning(f"⚠️ **Base de Impostos não encontrada:** O relatório será gerado sem as análises de alíquotas.")
+        st.warning(f"⚠️ **Base de Impostos não encontrada:** O relatório será gerado sem as análises de alíquotas correspondentes.")
     
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
-        st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha não conterá as abas de apuração de MG.")
+        st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada sem as análises correspondentes de apuração.")
 
     # UPLOAD EM TRÊS COLUNAS (CARDS)
     st.markdown("### 📥 Passo 3: Central de Arquivos")
@@ -137,7 +137,7 @@ if selecao:
     with c1:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("#### 📄 XML")
-        xmls = st.file_uploader("Arquivos soltos ou ZIP", type=['zip', 'xml'], accept_multiple_files=True)
+        xmls = st.file_uploader("Arquivos soltos ou ZIP", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
@@ -157,7 +157,7 @@ if selecao:
     st.markdown("<br>", unsafe_allow_html=True)
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
-        if st.button("🚀 INICIAR AUDITORIA"):
+        if st.button("🚀 GERAR RELATÓRIO"):
             if xmls and regime:
                 with st.spinner("Processando..."):
                     try:
@@ -165,5 +165,5 @@ if selecao:
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         st.balloons()
                         st.success("Auditoria Concluída!")
-                        st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                        st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                     except Exception as e: st.error(f"Erro: {e}")
