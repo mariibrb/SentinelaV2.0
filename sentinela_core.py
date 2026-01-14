@@ -9,7 +9,7 @@ from datetime import datetime
 import openpyxl
 from copy import copy
 
-# --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
+# --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS (Mantendo sua estrutura original) ---
 try:
     from audit_resumo import gerar_aba_resumo
     from Auditorias.audit_icms import processar_icms
@@ -48,7 +48,14 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML COM TRIAGEM E RECURSIVIDADE ---
+# --- NOVO MOTOR DE PROCESSAMENTO XML COM TRIAGEM E RECURSIVIDADE ---
+
+def buscar_tag_recursiva(tag_alvo, no):
+    if no is None: return ""
+    for elemento in no.iter():
+        if elemento.tag.split('}')[-1] == tag_alvo:
+            return elemento.text if elemento.text else ""
+    return ""
 
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
@@ -56,62 +63,58 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
         xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
         root = ET.fromstring(xml_str)
         
-        def buscar_tag(tag_alvo, no):
-            if no is None: return ""
-            for elemento in no.iter():
-                if elemento.tag.split('}')[-1] == tag_alvo:
-                    return elemento.text if elemento.text else ""
-            return ""
-
         inf = root.find('.//infNFe')
         if inf is None: return 
         
         ide = root.find('.//ide')
-        tp_nf = buscar_tag('tpNF', ide) # 0=Entrada, 1=Saída
+        tp_nf = buscar_tag_recursiva('tpNF', ide) # 0=Entrada, 1=Saída
         emit = root.find('.//emit')
         dest = root.find('.//dest')
         
-        cnpj_emit = re.sub(r'\D', '', buscar_tag('CNPJ', emit))
+        cnpj_emit = re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', emit))
         cnpj_alvo = re.sub(r'\D', '', str(cnpj_empresa_auditada))
         
-        # LÓGICA DE TRIAGEM AUTOMÁTICA
-        # Saída: CNPJ emitente é o meu E tipo da nota é 1 (Saída)
-        # Entrada: Emitente é terceiro OU sou o emitente mas tipo é 0 (Entrada/Devolução)
-        if cnpj_emit == cnpj_alvo and tp_nf == '1':
-            tipo_operacao = "SAIDA"
-        else:
-            tipo_operacao = "ENTRADA"
+        # TRIAGEM AUTOMÁTICA
+        tipo_operacao = "SAIDA" if (cnpj_emit == cnpj_alvo and tp_nf == '1') else "ENTRADA"
 
         chave = inf.attrib.get('Id', '')[3:]
-        n_nf = buscar_tag('nNF', ide)
+        n_nf = buscar_tag_recursiva('nNF', ide)
 
         for det in root.findall('.//det'):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            # Dados básicos para o gerencial e auditorias
+            iest_item = buscar_tag_recursiva('IEST', det.find('.//ICMS'))
+            iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
+            ie_final = iest_item if iest_item != "" else iest_no_xml
+
             linha = {
                 "TIPO_SISTEMA": tipo_operacao,
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
-                "CNPJ_EMIT": buscar_tag('CNPJ', emit),
-                "CNPJ_DEST": buscar_tag('CNPJ', dest),
-                "UF_EMIT": buscar_tag('UF', emit),
-                "UF_DEST": buscar_tag('UF', dest),
-                "CFOP": buscar_tag('CFOP', prod),
-                "NCM": re.sub(r'\D', '', buscar_tag('NCM', prod)).zfill(8),
-                "VPROD": safe_float(buscar_tag('vProd', prod)),
-                "CST-ICMS": buscar_tag('CST', det.find('.//ICMS')) or buscar_tag('CSOSN', det.find('.//ICMS')),
-                "VAL-ICMS-ST": safe_float(buscar_tag('vICMSST', imp)),
-                "BC-ICMS-ST": safe_float(buscar_tag('vBCST', imp)),
-                "VAL-FCP-ST": safe_float(buscar_tag('vFCPST', imp)),
-                "IE_SUBST": buscar_tag('IEST', root) or buscar_tag('IE_SUBST', root)
+                "CNPJ_EMIT": buscar_tag_recursiva('CNPJ', emit),
+                "CNPJ_DEST": buscar_tag_recursiva('CNPJ', dest),
+                "UF_EMIT": buscar_tag_recursiva('UF', emit),
+                "UF_DEST": buscar_tag_recursiva('UF', dest),
+                "CFOP": buscar_tag_recursiva('CFOP', prod),
+                "NCM": re.sub(r'\D', '', buscar_tag_recursiva('NCM', prod)).zfill(8),
+                "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
+                "ORIGEM": buscar_tag_recursiva('orig', det.find('.//ICMS')),
+                "CST-ICMS": buscar_tag_recursiva('CST', det.find('.//ICMS')) or buscar_tag_recursiva('CSOSN', det.find('.//ICMS')),
+                "VAL-DIFAL": safe_float(buscar_tag_recursiva('vICMSUFDest', imp)) + safe_float(buscar_tag_recursiva('vFCPUFDest', imp)),
+                "VAL-FCP-DEST": safe_float(buscar_tag_recursiva('vFCPUFDest', imp)),
+                "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', imp)),
+                "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', imp)),
+                "VAL-FCP-ST": safe_float(buscar_tag_recursiva('vFCPST', imp)),
+                "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
+                "IE_SUBST": str(ie_final).strip(),
+                "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
+                "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp))
             }
             dados_lista.append(linha)
     except: pass
 
 def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
-    """Lê arquivos e descompacta ZIPs recursivamente (ZIP dentro de ZIP)"""
     dados_lista = []
     if not files: return pd.DataFrame(), pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
@@ -123,10 +126,8 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
                     with z.open(filename) as f:
                         processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
                 elif filename.lower().endswith('.zip'):
-                    # Recursividade para ZIP dentro de ZIP
                     with z.open(filename) as nested_zip:
-                        nested_data = io.BytesIO(nested_zip.read())
-                        ler_zip(nested_data)
+                        ler_zip(io.BytesIO(nested_zip.read()))
 
     for f in lista_trabalho:
         if f.name.lower().endswith('.xml'):
@@ -136,14 +137,10 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
             
     df_total = pd.DataFrame(dados_lista)
     if df_total.empty: return pd.DataFrame(), pd.DataFrame()
-    
-    df_e = df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy()
-    df_s = df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
-    return df_e, df_s
+    return df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy(), df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
-    
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
@@ -158,7 +155,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 lines = raw_content.splitlines()
                 data_rows = [re.split(r'\t|;', line) for line in lines if line.strip()]
                 df = pd.DataFrame(data_rows, columns=colunas_alvo)
-                # Conversão numérica automática
                 for col in df.columns:
                     if any(key in col.upper() for key in ['VLR', 'BC', 'VAL', 'VC', 'QTDE', 'VUNIT', 'ICMS', 'PIS', 'COF', 'IPI']):
                         df[col] = df[col].apply(safe_float)
@@ -196,7 +192,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
 
-    # MESCLAGEM DO ARQUIVO RET USANDO O CÓDIGO DA EMPRESA
     if is_ret:
         try:
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
@@ -215,5 +210,4 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                         for col, dim in source.column_dimensions.items(): target.column_dimensions[col].width = dim.width
                 output_final = io.BytesIO(); wb_final.save(output_final); return output_final.getvalue()
         except: pass
-            
     return output.getvalue()
