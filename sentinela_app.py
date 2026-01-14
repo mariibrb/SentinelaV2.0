@@ -5,7 +5,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # Configuração da Página - Visual Sentinela
 st.set_page_config(page_title="Sentinela - Auditoria Fiscal", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# Estilo CSS Sentinela (Preservado conforme o teu original)
+# Estilo CSS Sentinela
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -28,17 +28,25 @@ st.markdown("""
 # --- CARREGAMENTO DA BASE DE CLIENTES ATIVOS ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
-    # Caminho ajustado para a pasta .streamlit conforme solicitado
-    caminho = ".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv"
-    try:
+    # Tentamos os caminhos mais prováveis conforme o que você subiu
+    caminhos_possiveis = [
+        ".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv",
+        ".streamlit/Clientes Ativos.xlsx",
+        "Clientes Ativos.xlsx - EMPRESAS.csv"
+    ]
+    
+    for caminho in caminhos_possiveis:
         if os.path.exists(caminho):
-            return pd.read_csv(caminho)
-        else:
-            st.error(f"Arquivo não encontrado em: {caminho}")
-            return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Erro ao ler a base de clientes: {e}")
-        return pd.DataFrame()
+            try:
+                if caminho.endswith('.csv'):
+                    return pd.read_csv(caminho)
+                else:
+                    return pd.read_excel(caminho)
+            except Exception as e:
+                continue
+    
+    st.error("Arquivo de Clientes não encontrado no GitHub. Verifique a pasta .streamlit")
+    return pd.DataFrame()
 
 df_clientes = carregar_base_clientes()
 
@@ -59,22 +67,22 @@ with st.sidebar:
 st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div>", unsafe_allow_html=True)
 
 if not df_clientes.empty:
-    # Coluna A: CÓD | Coluna B: RAZÃO SOCIAL | Coluna E: CNPJ
-    opcoes = df_clientes.apply(lambda x: f"{x['CÓD']} - {x['RAZÃO SOCIAL']}", axis=1).tolist()
-    selecao = st.selectbox("Empresa:", [""] + opcoes, label_visibility="collapsed")
+    # Ajuste para garantir que as colunas existam (CÓD e RAZÃO SOCIAL)
+    try:
+        opcoes = df_clientes.apply(lambda x: f"{int(x['CÓD'])} - {x['RAZÃO SOCIAL']}", axis=1).tolist()
+        selecao = st.selectbox("Empresa:", [""] + opcoes, label_visibility="collapsed")
+    except Exception as e:
+        st.error(f"Erro ao processar colunas da planilha: {e}")
+        selecao = None
 else:
-    st.warning("Aguardando upload da base de clientes ativos...")
     selecao = None
 
 if selecao:
-    # Captura os dados da empresa selecionada
     cod_cliente = int(selecao.split(" - ")[0])
     dados_empresa = df_clientes[df_clientes['CÓD'] == cod_cliente].iloc[0]
     cnpj_auditado = dados_empresa['CNPJ']
 
     st.info(f"🧡 Auditando: {dados_empresa['RAZÃO SOCIAL']} | CNPJ: {cnpj_auditado}")
-    
-    # FLAG RET
     is_ret = st.toggle("Empresa utiliza RET (Minas Gerais)")
 
     # PASSO 2: Regime Tributário
@@ -88,7 +96,6 @@ if selecao:
         
         with c_xml:
             st.subheader("📁 XMLs / ZIPs")
-            # Agora um único campo para todos os XMLs, o Core separa sozinho pelo CNPJ
             xmls = st.file_uploader("Upload de todos os XMLs (Entradas e Saídas)", type=['zip', 'xml'], accept_multiple_files=True, key="xml_u")
         
         with c_ger:
@@ -99,21 +106,17 @@ if selecao:
 
         st.markdown("---")
         
-        col_btn_1, col_btn_2, col_btn_3 = st.columns([1,2,1])
+        col_btn_2 = st.columns([1,2,1])[1]
         with col_btn_2:
             if st.button("🚀 GERAR RELATÓRIO"):
                 if not xmls:
-                    st.error("Por favor, carregue os ficheiros XML/ZIP antes de processar.")
+                    st.error("Por favor, carregue os arquivos XML/ZIP.")
                 else:
-                    with st.spinner("🧡 Sentinela está a separar e processar tudo..."):
+                    with st.spinner("🧡 Sentinela está separando e processando tudo..."):
                         try:
-                            # Chama o motor com separação automática por CNPJ
                             df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
-                            
-                            # Gera o Excel final mesclando com o modelo RET se necessário
                             relat = gerar_excel_final(df_xe, df_xs, None, as_f, ge, gs, cod_cliente, regime, is_ret)
-                            
                             st.success("Auditoria Concluída! 🧡")
-                            st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}_{regime.replace(' ', '_')}.xlsx", use_container_width=True)
+                            st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                         except Exception as e: 
                             st.error(f"Erro Crítico no Motor: {e}")
