@@ -168,7 +168,7 @@ if selecao:
     st.markdown("<br>", unsafe_allow_html=True)
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
-        if st.button("🚀 INICIAR AUDITORIA"):
+        if st.button("🚀 INICIAR ANÁLISE"):
             if xmls and regime:
                 with st.spinner("Processando..."):
                     try:
