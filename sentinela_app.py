@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS PREMIUM + BARRA FININHA LARANJA ---
+# --- ESTILO CSS PREMIUM REFINADO ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -14,22 +14,21 @@ st.markdown("""
     .stApp { background-color: #F0F2F6; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* Título alinhado à esquerda com subtítulo cinza */
-    .titulo-container { text-align: left; margin-bottom: 5px; padding-left: 10px; }
+    /* Cabeçalho sem o separador que incomodava */
+    .titulo-container { text-align: left; margin-bottom: 20px; padding-left: 10px; }
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
 
-    /* A BARRA LARANJA FININHA (Como na imagem) */
-    .barra-laranja {
+    /* Barra fininha para os passos internos apenas */
+    .linha-laranja {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
         border: none;
-        margin: 5px 0 25px 0;
+        margin: 15px 0;
         width: 100%;
         border-radius: 10px;
     }
 
-    /* Cards Brancos com Sombra */
     .card {
         background-color: #FFFFFF;
         padding: 25px;
@@ -38,11 +37,9 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* Títulos de Passos Limpos */
     h3 { color: #444444 !important; font-size: 1.1rem; border: none !important; margin-bottom: 10px !important; }
     h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 10px; }
 
-    /* Botão com Gradiente */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -62,7 +59,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* Uploaders customizados */
     section[data-testid="stFileUploadDropzone"] {
         border: 2px dashed #FF6F00 !important;
         background-color: #FFF9F5 !important;
@@ -110,11 +106,10 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
-# --- CABEÇALHO ---
+# --- CABEÇALHO (Agora limpo, sem o separador laranja abaixo dele) ---
 st.markdown("""
 <div class='titulo-container'>
     <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Auditoria Digital</span>
-    <div class='barra-laranja'></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -151,6 +146,9 @@ if selecao:
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
         st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
 
+    # LINHA LARANJA ENTRE STATUS E PASSO 3
+    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
+
     # UPLOAD EM TRÊS COLUNAS
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
@@ -174,6 +172,9 @@ if selecao:
         gs = st.file_uploader("Gerencial ", type=['csv', 'xlsx'], accept_multiple_files=True, key="gs")
         as_f = st.file_uploader("Autenticidade ", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
         st.markdown("</div>", unsafe_allow_html=True)
+
+    # LINHA LARANJA FINAL ANTES DO BOTÃO
+    st.markdown("<div class='linha-laranja'></div>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     _, col_btn, _ = st.columns([1, 1, 1])
