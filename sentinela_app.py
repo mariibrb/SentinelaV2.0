@@ -28,24 +28,25 @@ st.markdown("""
 # --- CARREGAMENTO DA BASE DE CLIENTES ATIVOS ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
-    # Tentamos os caminhos mais prováveis conforme o que você subiu
-    caminhos_possiveis = [
+    # Caminhos possíveis para encontrar a planilha na pasta .streamlit
+    caminhos = [
         ".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv",
-        ".streamlit/Clientes Ativos.xlsx",
-        "Clientes Ativos.xlsx - EMPRESAS.csv"
+        ".streamlit/Clientes Ativos.xlsx"
     ]
-    
-    for caminho in caminhos_possiveis:
+    for caminho in caminhos:
         if os.path.exists(caminho):
             try:
                 if caminho.endswith('.csv'):
-                    return pd.read_csv(caminho)
+                    df = pd.read_csv(caminho)
                 else:
-                    return pd.read_excel(caminho)
-            except Exception as e:
+                    df = pd.read_excel(caminho)
+                # Limpeza de linhas vazias (solução para o erro NaN)
+                df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
+                df['CÓD'] = df['CÓD'].astype(int)
+                return df
+            except:
                 continue
-    
-    st.error("Arquivo de Clientes não encontrado no GitHub. Verifique a pasta .streamlit")
+    st.error("Arquivo de Clientes não encontrado em .streamlit/")
     return pd.DataFrame()
 
 df_clientes = carregar_base_clientes()
@@ -63,16 +64,14 @@ with st.sidebar:
 
 # --- FLUXO DE PASSOS ---
 
-# PASSO 1: Seleção da Empresa
+# PASSO 1
 st.markdown("<div class='passo-container'>👣 PASSO 1: Selecione a Empresa</div>", unsafe_allow_html=True)
-
 if not df_clientes.empty:
-    # Ajuste para garantir que as colunas existam (CÓD e RAZÃO SOCIAL)
     try:
-        opcoes = df_clientes.apply(lambda x: f"{int(x['CÓD'])} - {x['RAZÃO SOCIAL']}", axis=1).tolist()
+        opcoes = [f"{int(linha['CÓD'])} - {linha['RAZÃO SOCIAL']}" for _, linha in df_clientes.iterrows()]
         selecao = st.selectbox("Empresa:", [""] + opcoes, label_visibility="collapsed")
     except Exception as e:
-        st.error(f"Erro ao processar colunas da planilha: {e}")
+        st.error(f"Erro ao formatar lista: {e}")
         selecao = None
 else:
     selecao = None
@@ -85,12 +84,12 @@ if selecao:
     st.info(f"🧡 Auditando: {dados_empresa['RAZÃO SOCIAL']} | CNPJ: {cnpj_auditado}")
     is_ret = st.toggle("Empresa utiliza RET (Minas Gerais)")
 
-    # PASSO 2: Regime Tributário
+    # PASSO 2
     st.markdown("<div class='passo-container'>⚖️ PASSO 2: Defina o Regime Tributário</div>", unsafe_allow_html=True)
     regime = st.selectbox("Regime:", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
 
     if regime:
-        # PASSO 3: Upload dos Arquivos
+        # PASSO 3
         st.markdown("<div class='passo-container'>📥 PASSO 3: Upload dos Arquivos</div>", unsafe_allow_html=True)
         c_xml, c_ger = st.columns(2, gap="large")
         
@@ -106,17 +105,15 @@ if selecao:
 
         st.markdown("---")
         
-        col_btn_2 = st.columns([1,2,1])[1]
-        with col_btn_2:
-            if st.button("🚀 GERAR RELATÓRIO"):
-                if not xmls:
-                    st.error("Por favor, carregue os arquivos XML/ZIP.")
-                else:
-                    with st.spinner("🧡 Sentinela está separando e processando tudo..."):
-                        try:
-                            df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
-                            relat = gerar_excel_final(df_xe, df_xs, None, as_f, ge, gs, cod_cliente, regime, is_ret)
-                            st.success("Auditoria Concluída! 🧡")
-                            st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
-                        except Exception as e: 
-                            st.error(f"Erro Crítico no Motor: {e}")
+        if st.button("🚀 GERAR RELATÓRIO"):
+            if not xmls:
+                st.error("Carregue os arquivos XML/ZIP.")
+            else:
+                with st.spinner("🧡 Sentinela processando..."):
+                    try:
+                        df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
+                        relat = gerar_excel_final(df_xe, df_xs, None, as_f, ge, gs, cod_cliente, regime, is_ret)
+                        st.success("Auditoria Concluída! 🧡")
+                        st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                    except Exception as e: 
+                        st.error(f"Erro no Motor: {e}")
