@@ -72,7 +72,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
         cnpj_emit = re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', emit))
         cnpj_alvo = re.sub(r'\D', '', str(cnpj_empresa_auditada))
         
-        # TRIAGEM AUTOMÁTICA (CNPJ + TIPO DE NOTA)
+        # TRIAGEM AUTOMÁTICA
         tipo_operacao = "SAIDA" if (cnpj_emit == cnpj_alvo and tp_nf == '1') else "ENTRADA"
 
         chave = inf.attrib.get('Id', '')[3:]
@@ -185,6 +185,24 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
 
         if not df_xs.empty:
+            # Reincorporando o mapeamento de situação da nota caso 'as_f' ou 'ae' existam
+            st_map = {}
+            # Unindo autenticidades de entrada e saída para o mapeamento
+            arquivos_auth = []
+            if ae: arquivos_auth.extend(ae if isinstance(ae, list) else [ae])
+            if as_f: arquivos_auth.extend(as_f if isinstance(as_f, list) else [as_f])
+            
+            if arquivos_auth:
+                try:
+                    for f in arquivos_auth:
+                        f.seek(0)
+                        df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
+                        df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
+                        st_map.update(df_a.set_index(0)[5].to_dict())
+                except: pass
+            
+            df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
+            
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
