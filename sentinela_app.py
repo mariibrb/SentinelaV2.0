@@ -140,7 +140,7 @@ if selecao:
     if verificar_arquivo_github(f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"):
         st.success(f"✅ **Base de Impostos localizada com sucesso!**")
     else:
-        st.warning("⚠️ **Base de Impostos não encontrada no GitHub.**")
+        st.warning("⚠️ **Base de Impostos não encontrada.**")
     
     if is_ret:
         if verificar_arquivo_github(f"RET/{cod_cliente}-RET_MG.xlsx"):
