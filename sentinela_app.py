@@ -6,31 +6,34 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- ESTILO CSS CAMALEÃO (GAP EM CINZA IGUAL AO FUNDO) ---
+# --- CSS PARA ELIMINAR BALÕES E ESPAÇADORES BRANCOS ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     
-    /* Cor de Fundo do Site (Cinza) */
+    /* Cor de Fundo Geral */
     .stApp { background-color: #F0F2F6; }
     
     /* Sidebar */
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* PINTANDO O GAP E OS CONTAINERS COM O CINZA DO FUNDO */
+    /* EXTERMINADOR DE BALÕES: Pinta o fundo de todos os blocos internos de cinza */
     [data-testid="stVerticalBlock"], 
     [data-testid="stVerticalBlock"] > div,
-    .element-container { 
+    .element-container,
+    [data-testid="stVerticalBlockBorderWrapper"] { 
         background-color: #F0F2F6 !important; 
+        border: none !important;
+        box-shadow: none !important;
     }
 
-    /* Cabeçalho */
+    /* Cabeçalho Profissional à Esquerda */
     .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 0px; background-color: #F0F2F6; }
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
 
-    /* A LINHA LARANJA FININHA QUE VOCÊ GOSTOU */
+    /* A Linha Laranja Fininha com Gradiente */
     .barra-laranja-fina {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
@@ -40,7 +43,7 @@ st.markdown("""
         border-radius: 10px;
     }
 
-    /* CARDS BRANCOS (Os únicos que brilham no fundo cinza) */
+    /* CARDS BRANCOS: A única coisa que deve ser branca e ter sombra */
     .card {
         background-color: #FFFFFF !important;
         padding: 25px;
@@ -53,7 +56,6 @@ st.markdown("""
     h3 { color: #444444 !important; font-size: 1.1rem; border: none !important; margin-bottom: 10px !important; }
     h4 { color: #FF6F00 !important; font-size: 1rem; margin-bottom: 10px; }
 
-    /* Botão com Gradiente */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -91,6 +93,7 @@ def carregar_base_clientes():
             try:
                 df = pd.read_csv(caminho) if caminho.endswith('.csv') else pd.read_excel(caminho)
                 df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
+                # Blindagem contra o .0 no código
                 df['CÓD'] = df['CÓD'].apply(lambda x: str(int(float(x))))
                 return df
             except: continue
@@ -153,7 +156,7 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Status Bar
+    # Status Bar da Auditoria
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
     if not verificar_base_github(cod_cliente):
@@ -196,5 +199,5 @@ if selecao:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         st.balloons()
-                        st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                        st.download_button("💾 BAIXAR RELATÓRIO AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                     except Exception as e: st.error(f"Erro: {e}")
