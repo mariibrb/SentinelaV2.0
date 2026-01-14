@@ -28,7 +28,6 @@ st.markdown("""
 # --- CARREGAMENTO DA BASE DE CLIENTES ATIVOS ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
-    # Caminhos possíveis para encontrar a planilha na pasta .streamlit
     caminhos = [
         ".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv",
         ".streamlit/Clientes Ativos.xlsx"
@@ -40,7 +39,6 @@ def carregar_base_clientes():
                     df = pd.read_csv(caminho)
                 else:
                     df = pd.read_excel(caminho)
-                # Limpeza de linhas vazias (solução para o erro NaN)
                 df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
                 df['CÓD'] = df['CÓD'].astype(int)
                 return df
@@ -95,11 +93,13 @@ if selecao:
         
         with c_xml:
             st.subheader("📁 XMLs / ZIPs")
-            xmls = st.file_uploader("Upload de todos os XMLs (Entradas e Saídas)", type=['zip', 'xml'], accept_multiple_files=True, key="xml_u")
+            xmls = st.file_uploader("Upload de todos os XMLs (Triagem Automática)", type=['zip', 'xml'], accept_multiple_files=True, key="xml_u")
         
         with c_ger:
-            st.subheader("📊 GERENCIAIS")
+            st.subheader("📊 GERENCIAIS E AUTENTICIDADE")
             ge = st.file_uploader("Gerencial Entrada", type=['csv', 'xlsx'], accept_multiple_files=True, key="ge_u")
+            ae = st.file_uploader("Autenticidade Entrada", type=['xlsx', 'csv'], accept_multiple_files=True, key="ae_u")
+            st.markdown("---")
             gs = st.file_uploader("Gerencial Saída", type=['csv', 'xlsx'], accept_multiple_files=True, key="gs_u")
             as_f = st.file_uploader("Autenticidade Saída", type=['xlsx', 'csv'], accept_multiple_files=True, key="as_u")
 
@@ -112,7 +112,8 @@ if selecao:
                 with st.spinner("🧡 Sentinela processando..."):
                     try:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
-                        relat = gerar_excel_final(df_xe, df_xs, None, as_f, ge, gs, cod_cliente, regime, is_ret)
+                        # Passando 'ae' corretamente para o motor
+                        relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         st.success("Auditoria Concluída! 🧡")
                         st.download_button("💾 BAIXAR AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                     except Exception as e: 
