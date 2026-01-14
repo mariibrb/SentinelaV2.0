@@ -6,30 +6,32 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS PARA ELIMINAR BALÕES E ESPAÇADORES BRANCOS ---
+# --- CSS EXTERMINADOR DE BLOCOS BRANCOS (ZONA ZERO) ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     
-    /* Cor de Fundo Geral */
+    /* Cor de Fundo Geral do Site */
     .stApp { background-color: #F0F2F6; }
     
     /* Sidebar */
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* EXTERMINADOR DE BALÕES: Pinta o fundo de todos os blocos internos de cinza */
-    [data-testid="stVerticalBlock"], 
+    /* MATA OS BALÕES: Força transparência em todos os wrappers automáticos do Streamlit */
+    [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stVerticalBlock"],
     [data-testid="stVerticalBlock"] > div,
-    .element-container,
-    [data-testid="stVerticalBlockBorderWrapper"] { 
-        background-color: #F0F2F6 !important; 
+    .stColumn > div,
+    .element-container {
+        background-color: transparent !important;
+        background: transparent !important;
         border: none !important;
         box-shadow: none !important;
     }
 
-    /* Cabeçalho Profissional à Esquerda */
-    .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 0px; background-color: #F0F2F6; }
+    /* Cabeçalho alinhado à esquerda */
+    .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 0px; }
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
 
@@ -43,14 +45,14 @@ st.markdown("""
         border-radius: 10px;
     }
 
-    /* CARDS BRANCOS: A única coisa que deve ser branca e ter sombra */
+    /* OS CARDS: Única coisa branca com sombra */
     .card {
         background-color: #FFFFFF !important;
         padding: 25px;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
         margin-bottom: 20px;
-        border: none !important;
+        display: block;
     }
 
     h3 { color: #444444 !important; font-size: 1.1rem; border: none !important; margin-bottom: 10px !important; }
@@ -84,7 +86,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CARREGAMENTO DA BASE ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
     caminhos = [".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv", ".streamlit/Clientes Ativos.xlsx"]
@@ -93,7 +94,6 @@ def carregar_base_clientes():
             try:
                 df = pd.read_csv(caminho) if caminho.endswith('.csv') else pd.read_excel(caminho)
                 df = df.dropna(subset=['CÓD', 'RAZÃO SOCIAL'])
-                # Blindagem contra o .0 no código
                 df['CÓD'] = df['CÓD'].apply(lambda x: str(int(float(x))))
                 return df
             except: continue
@@ -112,7 +112,6 @@ def verificar_base_github(cod_cliente):
 
 df_clientes = carregar_base_clientes()
 
-# --- SIDEBAR ---
 with st.sidebar:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
@@ -124,7 +123,7 @@ with st.sidebar:
         return output.getvalue()
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
-# --- CABEÇALHO ---
+# Cabeçalho
 st.markdown("""
 <div class='titulo-container'>
     <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Auditoria Digital</span>
@@ -132,7 +131,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# SELEÇÃO E CONFIGURAÇÃO
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
@@ -156,7 +154,6 @@ if selecao:
         is_ret = st.toggle("Habilitar MG (RET)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Status Bar da Auditoria
     st.markdown(f"<div class='status-container'>📍 <b>Auditando:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
     if not verificar_base_github(cod_cliente):
@@ -165,7 +162,6 @@ if selecao:
     if is_ret and not os.path.exists(f"RET/{cod_cliente}-RET_MG.xlsx"):
         st.warning(f"⚠️ **Modelo RET não encontrado:** A planilha será gerada, mas sem as análises correspondentes.")
 
-    # UPLOAD EM TRÊS COLUNAS
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
