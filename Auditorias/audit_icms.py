@@ -7,17 +7,18 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
     colunas_xml_originais = list(df_saidas.columns)
     df_i = df_saidas.copy()
 
-    # --- 1. CARREGAMENTO DO GABARITO (PREMISSA INICIAL) ---
+    # --- 1. CARREGAMENTO DO GABARITO (PRIORIDADE TOTAL) ---
     caminho_base = os.path.join("Bases_Tributárias", f"{cod_cliente}-Bases_Tributarias.xlsx")
     base_gabarito = pd.DataFrame()
     if os.path.exists(caminho_base):
         try:
-            # Lemos rigorosamente como texto para match perfeito
+            # Lemos como texto puro para match exato com os zeros que você colocou
             base_gabarito = pd.read_excel(caminho_base, dtype=str)
             base_gabarito.columns = [str(c).strip().upper() for c in base_gabarito.columns]
             
             col_ncm_gab = [c for c in base_gabarito.columns if 'NCM' in c]
             if col_ncm_gab:
+                # Normaliza apenas removendo sujeira, mantendo o texto exato
                 base_gabarito['NCM_KEY'] = base_gabarito[col_ncm_gab[0]].apply(lambda x: re.sub(r'\D', '', str(x)).strip())
         except Exception as e:
             st.error(f"Erro ao ler Gabarito Tributário: {e}")
@@ -33,7 +34,8 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
         uf_orig = str(r.get('UF_EMIT', '')).strip().upper()
         uf_dest = str(r.get('UF_DEST', '')).strip().upper()
         cfop = str(r.get('CFOP', '')).strip()
-        ncm_xml = re.sub(r'\D', '', str(r.get('NCM', ''))).strip()
+        # NCM do XML já vem tratado como texto pelo Core
+        ncm_xml = str(r.get('NCM', '')).strip()
         
         cst_xml = str(r.get('CST-ICMS', '00')).zfill(2)
         alq_xml = float(r.get('ALQ-ICMS', 0.0))
@@ -41,44 +43,47 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
         vprod = float(r.get('VPROD', 0.0))
         vlr_icms_xml = float(r.get('VLR-ICMS', 0.0))
 
-        # --- VARIÁVEIS DE CONTROLE ---
+        # VARIÁVEIS DE CONTROLE
         alq_esp = None
         cst_esp = None
         fundamentacao = ""
 
         # ==========================================================
-        # PASSO 1: CONSULTA À BASE DE DADOS (PRIORIDADE MÁXIMA)
+        # PASSO 1: CONSULTA À BASE DE DADOS (USANDO OS NOMES DA SUA IMAGEM)
         # ==========================================================
         if not base_gabarito.empty and 'NCM_KEY' in base_gabarito.columns:
             if ncm_xml in base_gabarito['NCM_KEY'].values:
                 g = base_gabarito[base_gabarito['NCM_KEY'] == ncm_xml].iloc[0]
                 
-                # Busca Alíquota no Gabarito
-                col_alq = [c for c in base_gabarito.columns if 'ALQ' in c]
-                if col_alq:
-                    col_inter = [c for c in col_alq if 'INTER' in c]
-                    if col_inter and uf_orig != uf_dest:
-                        alq_esp = float(g[col_inter[0]])
-                    else:
-                        alq_esp = float(g[col_alq[0]])
+                # Mapeamento para ALÍQUOTA INTERNA (Conforme sua imagem: ALIQ (INTERNA))
+                if uf_orig == uf_dest:
+                    col_aliq_interna = [c for c in base_gabarito.columns if 'ALIQ' in c and 'INTERNA' in c]
+                    col_cst_interna = [c for c in base_gabarito.columns if 'CST' in c and 'IN' in c] # Busca CST (IN...)
+                    
+                    if col_aliq_interna: alq_esp = float(g[col_aliq_interna[0]])
+                    if col_cst_interna: cst_esp = str(g[col_cst_interna[0]]).strip().split('.')[0].zfill(2)
                 
-                # Busca CST no Gabarito
-                col_cst = [c for c in base_gabarito.columns if 'CST' in c]
-                if col_cst:
-                    cst_esp = str(g[col_cst[0]]).strip().split('.')[0].zfill(2)
-                
-                fundamentacao = f"Prevalece regra da Base de Dados para NCM {ncm_xml}."
+                # Mapeamento para ALÍQUOTA INTERESTADUAL (Se existir coluna correspondente)
+                else:
+                    col_aliq_ext = [c for c in base_gabarito.columns if 'ALIQ' in c and ('EXT' in c or 'FORA' in c or 'INTEREST' in c)]
+                    col_cst_ext = [c for c in base_gabarito.columns if 'CST' in c and ('ES' in c or 'EXT' in c)] # Busca CST (ES...)
+                    
+                    if col_aliq_ext: alq_esp = float(g[col_aliq_ext[0]])
+                    if col_cst_ext: cst_esp = str(g[col_cst_ext[0]]).strip().split('.')[0].zfill(2)
+
+                if alq_esp is not None:
+                    fundamentacao = f"Prevalece base de dados: Alíquota {alq_esp}% para NCM {ncm_xml}."
 
         # ==========================================================
-        # PASSO 2: REGRAS ESPECÍFICAS DE CFOP/ENTRADAS (ST)
+        # PASSO 2: REGRAS DE ST (QUANDO NÃO ACHOU NO GABARITO OU É CFOP ESPECÍFICO)
         # ==========================================================
-        if cst_esp is None: # Só entra aqui se não achou no gabarito
+        if alq_esp is None:
             if cfop in ['5405', '6405', '6404', '5667'] or ncm_xml in ncms_com_st_na_compra:
                 cst_esp = "60"; alq_esp = 0.0
                 fundamentacao = "Identificado como ST (CFOP ou Histórico de Compra)."
 
         # ==========================================================
-        # PASSO 3: REGRAS GERAIS DE ALÍQUOTA (QUANDO NÃO HÁ GABARITO)
+        # PASSO 3: REGRAS GERAIS (ÚLTIMO RECURSO)
         # ==========================================================
         if alq_esp is None:
             if uf_orig != uf_dest:
@@ -87,10 +92,10 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
                     sul_sudeste = ['SP', 'RJ', 'MG', 'PR', 'RS', 'SC']
                     alq_esp = 7.0 if (uf_orig in sul_sudeste and uf_dest not in sul_sudeste + ['ES']) else 12.0
             else:
-                alq_esp = 18.0 # Interno padrão
+                alq_esp = 18.0
             
             if cst_esp is None: cst_esp = "00"
-            fundamentacao = "Aplicada regra geral de tributação estadual."
+            fundamentacao = "Aplicada regra geral estadual (NCM não localizado na base)."
 
         # --- CÁLCULOS FINAIS ---
         vlr_icms_devido = round(bc_icms_xml * (alq_esp / 100), 2)
