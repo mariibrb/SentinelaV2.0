@@ -88,7 +88,7 @@ if selecao:
     if is_ret:
         path_ret = f"RET/{cod_cliente}-RET_MG.xlsx"
         if verificar_arquivo_github(path_ret):
-            with c2_stat: st.success("✅ Modelo RET Localizado")
+            with c2_stat: st.success("✅ Base RET Localizada")
         else:
             with c2_stat: st.warning("⚠️ Modelo RET não encontrado")
 
