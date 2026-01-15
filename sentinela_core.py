@@ -18,13 +18,13 @@ try:
     from Auditorias.audit_difal import processar_difal
     from Apuracoes.apuracao_difal import gerar_resumo_uf
 except ImportError as e:
-    st.error(f"Erro de Dependência no Motor: {e}")
+    st.error(f"⚠️ Erro de Dependência: Verifique se as pastas Auditorias e Apuracoes existem. Erro: {e}")
 
-# --- UTILITÁRIOS ---
+# --- UTILITÁRIOS DE TRATAMENTO DE DADOS ---
 def safe_float(v):
     if v is None or pd.isna(v): return 0.0
     txt = str(v).strip().upper()
-    if txt in ['NT', '', 'N/A', 'ISENTO', 'NULL']: return 0.0
+    if txt in ['NT', '', 'N/A', 'ISENTO', 'NULL', 'ZERO']: return 0.0
     try:
         txt = txt.replace('R$', '').replace(' ', '').replace('%', '').strip()
         if ',' in txt and '.' in txt: txt = txt.replace('.', '').replace(',', '.')
@@ -65,14 +65,10 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            # --- SEÇÃO ICMS / DIFAL / FCP ---
             icms_no = det.find('.//ICMS')
-            v_difal_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
-            v_fcp_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
-            
-            iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
-            iest_item = buscar_tag_recursiva('IEST', icms_no)
-            ie_final = iest_item if iest_item != "" else iest_no_xml
+            ipi_no = det.find('.//IPI')
+            pis_no = det.find('.//PIS')
+            cof_no = det.find('.//COFINS')
 
             linha = {
                 "TIPO_SISTEMA": tipo_operacao,
@@ -92,27 +88,25 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "VLR-ICMS": safe_float(buscar_tag_recursiva('vICMS', icms_no)),
                 "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', icms_no)),
                 "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', icms_no)),
-                "IE_SUBST": str(ie_final).strip(),
-                "VAL-DIFAL": v_difal_dest + v_fcp_dest,
-                "VAL-FCP-DEST": v_fcp_dest,
-                "VAL-FCP-ST": safe_float(buscar_tag_recursiva('vFCPST', imp)),
-                "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
-                
-                # --- SEÇÃO REFORMA / NOVOS IMPOSTOS ---
+                "IE_SUBST": str(buscar_tag_recursiva('IEST', icms_no)).strip(),
+                "ALQ-IPI": safe_float(buscar_tag_recursiva('pIPI', ipi_no)),
+                "VLR-IPI": safe_float(buscar_tag_recursiva('vIPI', ipi_no)),
+                "CST-IPI": buscar_tag_recursiva('CST', ipi_no),
                 "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
                 "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp)),
-                
-                # --- SEÇÃO IPI / PIS / COFINS ---
-                "CST-IPI": buscar_tag_recursiva('CST', det.find('.//IPI')),
-                "VLR-IPI": safe_float(buscar_tag_recursiva('vIPI', det.find('.//IPI'))),
-                "CST-PIS": buscar_tag_recursiva('CST', det.find('.//PIS')),
-                "VLR-PIS": safe_float(buscar_tag_recursiva('vPIS', det.find('.//PIS'))),
-                "CST-COFINS": buscar_tag_recursiva('CST', det.find('.//COFINS')),
-                "VLR-COFINS": safe_float(buscar_tag_recursiva('vCOFINS', det.find('.//COFINS')))
+                "CST-PIS": buscar_tag_recursiva('CST', pis_no),
+                "VLR-PIS": safe_float(buscar_tag_recursiva('vPIS', pis_no)),
+                "CST-COFINS": buscar_tag_recursiva('CST', cof_no),
+                "VLR-COFINS": safe_float(buscar_tag_recursiva('vCOFINS', cof_no)),
+                "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
+                "VAL-DIFAL": safe_float(buscar_tag_recursiva('vICMSUFDest', imp)) + safe_float(buscar_tag_recursiva('vFCPUFDest', imp)),
+                "VAL-FCP-DEST": safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
             }
             dados_lista.append(linha)
-    except: pass
+    except Exception as e:
+        print(f"Erro ao ler item do XML: {e}")
 
+# --- TRATAMENTO DE ARQUIVOS ZIP E RECURSIVIDADE ---
 def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
     dados_lista = []
     if not files: return pd.DataFrame(), pd.DataFrame()
@@ -129,80 +123,92 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
                         ler_zip(io.BytesIO(nested_zip.read()))
 
     for f in lista_trabalho:
+        f.seek(0)
         if f.name.lower().endswith('.xml'):
-            f.seek(0); processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
+            processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
         elif f.name.lower().endswith('.zip'):
-            f.seek(0); ler_zip(f)
+            ler_zip(f)
             
     df_total = pd.DataFrame(dados_lista)
     if df_total.empty: return pd.DataFrame(), pd.DataFrame()
-    return df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy(), df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
+    
+    ent = df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy()
+    sai = df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
+    return ent, sai
+
+# --- PROCESSADOR DE ARQUIVOS GERENCIAIS (TXT/CSV/EXCEL) ---
+def ler_gerencial_robusto(arquivos, colunas_alvo):
+    if not arquivos: return pd.DataFrame(columns=colunas_alvo)
+    lista = arquivos if isinstance(arquivos, list) else [arquivos]
+    dfs = []
+    
+    for f in lista:
+        f.seek(0)
+        try:
+            if f.name.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(f)
+            else:
+                raw = f.read().decode('latin1', errors='replace')
+                # Tenta detectar separador (TAB ou Ponto e Vírgula)
+                sep = '\t' if '\t' in raw.splitlines()[0] else ';'
+                df = pd.read_csv(io.StringIO(raw), sep=sep, on_bad_lines='skip', dtype=str)
+            
+            # Ajuste de colunas caso o arquivo tenha nomes diferentes
+            df.columns = [c.strip().upper() for c in df.columns]
+            df_fmt = pd.DataFrame(columns=[c.upper() for c in colunas_alvo])
+            
+            for col in colunas_alvo:
+                col_up = col.upper()
+                if col_up in df.columns:
+                    df_fmt[col_up] = df[col_up]
+                else:
+                    df_fmt[col_up] = "0"
+            
+            # Converte valores numéricos
+            for col in df_fmt.columns:
+                if any(k in col for k in ['VLR', 'BC', 'VAL', 'QTDE', 'ICMS', 'PIS', 'COF', 'IPI']):
+                    df_fmt[col] = df_fmt[col].apply(safe_float)
+            
+            dfs.append(df_fmt)
+        except Exception as e:
+            st.warning(f"Aviso no arquivo {f.name}: {e}")
+            
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=colunas_alvo)
 
 # --- GERAÇÃO DO EXCEL FINAL ---
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     
-    # Colunas padrões para os Gerenciais (CSV/TXT)
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
-    def ler_csv_estilo_clipboard(arquivos, colunas_alvo):
-        if arquivos is None: return pd.DataFrame(columns=colunas_alvo)
-        lista = arquivos if isinstance(arquivos, list) else [arquivos]
-        dfs = []
-        for f in lista:
-            f.seek(0)
-            try:
-                raw_content = f.read().decode('latin1', errors='replace')
-                lines = raw_content.splitlines()
-                data_rows = [re.split(r'\t|;', line) for line in lines if line.strip()]
-                df = pd.DataFrame(data_rows, columns=colunas_alvo)
-                for col in df.columns:
-                    if any(key in col.upper() for key in ['VLR', 'BC', 'VAL', 'VC', 'QTDE', 'VUNIT', 'ICMS', 'PIS', 'COF', 'IPI']):
-                        df[col] = df[col].apply(safe_float)
-                dfs.append(df)
-            except: pass
-        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=colunas_alvo)
-
-    df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
-    df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
+    df_ger_ent = ler_gerencial_robusto(ge, cols_ent)
+    df_ger_sai = ler_gerencial_robusto(gs, cols_sai)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         try: gerar_aba_resumo(writer)
         except: pass
         
-        def gravar_df_como_tabela(df, sheet_name, table_name):
-            if df.empty: return
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
-            worksheet = writer.sheets[sheet_name]
-            (max_row, max_col) = df.shape
-            worksheet.add_table(0, 0, max_row, max_col - 1, {
-                'columns': [{'header': col} for col in df.columns],
-                'name': table_name, 'style': 'TableStyleMedium2'
-            })
-
-        gravar_df_como_tabela(df_ger_ent, 'GERENCIAL_ENTRADAS', 'TabelaEntradas')
-        gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
+        # Grava Gerenciais
+        df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
+        df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
         if not df_xs.empty:
+            # Lógica de Autenticidade (Mapeia Situação da Nota)
             st_map = {}
-            # Mapeamento de Autenticidade
-            arquivos_auth = []
-            if ae: arquivos_auth.extend(ae if isinstance(ae, list) else [ae])
-            if as_f: arquivos_auth.extend(as_f if isinstance(as_f, list) else [as_f])
-            
-            for f in arquivos_auth:
+            for f_auth in ([ae] if ae else []) + ([as_f] if as_f else []):
+                if not f_auth: continue
                 try:
-                    f.seek(0)
-                    df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
+                    f_auth.seek(0)
+                    df_a = pd.read_excel(f_auth, header=None) if f_auth.name.endswith('.xlsx') else pd.read_csv(f_auth, header=None, sep=None, engine='python')
+                    # Pega a chave e a situação (ajuste conforme o layout da sua planilha de autenticidade)
                     df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
                     st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # --- EXECUÇÃO DAS AUDITORIAS ---
-            # As colunas extraídas (IBS, CBS, FCP, etc) agora seguem para os módulos
+            # Chama Especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
@@ -210,7 +216,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
 
-    # Lógica de clonagem RET MG (Openpyxl)
+    # --- CLONAGEM RET MG ---
     if is_ret:
         try:
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
@@ -229,6 +235,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 output_ret = io.BytesIO()
                 wb_final.save(output_ret)
                 return output_ret.getvalue()
-        except: pass
+        except Exception as e:
+            st.error(f"Erro ao mesclar RET: {e}")
 
     return output.getvalue()
