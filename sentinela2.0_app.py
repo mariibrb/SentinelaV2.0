@@ -4,98 +4,71 @@ import requests
 from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Sentinela | Auditoria Digital", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS: ESTÉTICA SUAVE, MODERNA E ARREDONDADA ---
+# --- CSS TOTALMENTE LIMPO ---
 st.markdown("""
 <style>
-    /* Esconde elementos padrão */
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
+    .stApp { background-color: #F0F2F6; }
+    [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* Fundo e Fonte Principal */
-    .stApp { 
-        background-color: #FDFBFB; 
-        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    }
-    
-    /* Sidebar com borda suave e arredondada no topo */
-    [data-testid="stSidebar"] { 
-        background-color: #FFFFFF !important; 
-        border-right: 1px solid #F3E5F5;
-        box-shadow: 2px 0 10px rgba(0,0,0,0.02);
+    /* Remove balões e barras brancas automáticas */
+    [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stVerticalBlock"],
+    [data-testid="stVerticalBlock"] > div,
+    .stColumn > div,
+    .element-container {
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
     }
 
-    /* Títulos e Identidade Visual */
     .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 5px; }
-    .titulo-principal { 
-        color: #D81B60; /* Rosa mais sofisticado, não infantil */
-        font-weight: 800; 
-        font-size: 2.2rem; 
-        letter-spacing: -1px;
-    }
-    .titulo-sub { color: #9E9E9E; font-weight: 300; font-size: 1.5rem; }
+    .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
+    .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
 
-    .barra-estilizada {
-        height: 3px;
-        background: linear-gradient(to right, #D81B60, #F48FB1, transparent);
+    .barra-laranja-fina {
+        height: 2px;
+        background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
         border: none;
-        margin: 5px 0 25px 0;
-        border-radius: 50px;
+        margin: 5px 0 20px 0;
         width: 100%;
     }
 
-    /* Deixando tudo MUITO redondo */
+    /* Cards brancos apenas nos inputs */
+    .card {
+        background-color: #FFFFFF !important;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+    }
+
+    h3 { color: #444444 !important; font-size: 1.1rem; margin-top: 15px !important; }
+
     .stButton > button {
-        background: linear-gradient(90deg, #D81B60 0%, #F48FB1 100%) !important;
+        background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
-        border-radius: 30px !important; /* Super arredondado */
+        border-radius: 12px !important;
         font-weight: bold !important;
         height: 3.5rem !important;
         border: none !important;
-        box-shadow: 0 4px 15px rgba(216, 27, 96, 0.2) !important;
-        transition: 0.3s !important;
-    }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(216, 27, 96, 0.3) !important;
-    }
-
-    /* Cards e Inputs Arredondados */
-    [data-baseweb="select"], [data-testid="stFileUploadDropzone"], .status-container {
-        border-radius: 20px !important;
-        border: 1px solid #F1F1F1 !important;
-        background-color: #FFFFFF !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.03) !important;
     }
 
     .status-container {
-        padding: 15px;
-        border-left: 6px solid #D81B60 !important;
+        padding: 12px;
+        border-left: 5px solid #FF6F00;
+        background-color: #E8EAEE;
+        border-radius: 5px;
         margin: 15px 0;
-        color: #444;
     }
-
-    /* Ajuste de Respiro e Espaçamento */
-    h3 { 
-        color: #555555 !important; 
-        font-size: 1.1rem; 
-        margin-top: 20px !important; 
-        font-weight: 600 !important;
-    }
-
-    /* Remove excesso de quadrados do Streamlit */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: transparent !important;
-        border: none !important;
-    }
-    
-    /* Tooltip e Checkbox */
-    .stTooltipIcon { color: #D81B60 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNÇÕES (PRESERVADAS) ---
+# --- FUNÇÕES ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
     caminhos = [".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv", ".streamlit/Clientes Ativos.xlsx"]
@@ -127,27 +100,25 @@ with st.sidebar:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    
     def criar_gabarito():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO', index=False)
         return output.getvalue()
-    
     st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CONTEÚDO PRINCIPAL ---
 st.markdown(f"""
 <div class='titulo-container'>
-    <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Auditoria Digital</span>
-    <div class='barra-estilizada'></div>
+    <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Análise Tributária</span>
+    <div class='barra-laranja-fina'></div>
 </div>
 """, unsafe_allow_html=True)
 
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
-    st.markdown("### ✨ Passo 1: Seleção da Empresa")
+    st.markdown("### 👣 Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
         opcoes = [f"{l['CÓD']} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
         selecao = st.selectbox("Escolha", [""] + opcoes, label_visibility="collapsed")
@@ -159,32 +130,29 @@ if selecao:
     cnpj_auditado = dados_empresa['CNPJ']
 
     with col_b:
-        st.markdown("### ⚙️ Passo 2: Configuração")
+        st.markdown("### ⚖️ Passo 2: Configuração")
         regime = st.selectbox("Regime", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
         is_ret = st.toggle("Habilitar MG (RET)")
 
-    st.markdown(f"<div class='status-container'>📍 <b>Empresa ativa:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='status-container'>📍 <b>Empresa selecionada:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
     # Validação GitHub
-    c_status1, c_status2 = st.columns(2)
-    with c_status1:
-        if verificar_arquivo_github(f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"):
-            st.success(f"✅ **Bases Localizadas**")
-        else:
-            st.warning("⚠️ **Bases não encontradas**")
+    if verificar_arquivo_github(f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"):
+        st.success(f"✅ **Base de Impostos localizada com sucesso!**")
+    else:
+        st.warning("⚠️ **Base de Impostos não encontrada.**")
     
-    with c_status2:
-        if is_ret:
-            if verificar_arquivo_github(f"RET/{cod_cliente}-RET_MG.xlsx"):
-                st.success(f"✅ **Modelo RET OK**")
-            else:
-                st.warning(f"⚠️ **RET não localizado**")
+    if is_ret:
+        if verificar_arquivo_github(f"RET/{cod_cliente}-RET_MG.xlsx"):
+            st.success(f"✅ **Modelo RET localizado com sucesso!**")
+        else:
+            st.warning(f"⚠️ **Modelo RET não encontrado.**")
 
     st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
     with c1:
-        st.markdown("#### 📄 Notas XML")
+        st.markdown("#### 📄 XML")
         xmls = st.file_uploader("X", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
 
     with c2:
@@ -198,11 +166,11 @@ if selecao:
         as_f = st.file_uploader("F", type=['xlsx', 'csv'], accept_multiple_files=True, key="as", label_visibility="collapsed")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    _, col_btn, _ = st.columns([1, 1.2, 1])
+    _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
         if st.button("🚀 INICIAR ANÁLISE"):
             if xmls and regime:
-                with st.spinner("Analisando com precisão..."):
+                with st.spinner("Processando..."):
                     try:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
