@@ -71,7 +71,7 @@ if selecao:
     cnpj_auditado = str(dados_empresa['CNPJ']).strip()
 
     with col_b:
-        st.markdown("### ⚖️ Passo 2: Configuração")
+        st.markdown("### ⚖️ Passo 2: Selecionar Regime")
         regime = st.selectbox("Regime Fiscal", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
         is_ret = st.toggle("Habilitar MG (RET)")
 
