@@ -40,7 +40,7 @@ def buscar_tag_recursiva(tag_alvo, no):
     return ""
 
 def normalizar_ncm_absoluto(ncm):
-    """Garante que o NCM seja uma string de 8 dígitos, tratando números vindos do Excel."""
+    """Força o NCM a ser uma string de 8 dígitos, tratando números vindos do Excel."""
     if pd.isna(ncm) or ncm == "": return "00000000"
     limpo = re.sub(r'\D', '', str(ncm))
     if '.' in str(ncm):
@@ -154,7 +154,6 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
                 sep = '\t' if '\t' in raw.splitlines()[0] else ';'
                 df = pd.read_csv(io.StringIO(raw), sep=sep, on_bad_lines='skip', dtype=str)
             
-            # CORREÇÃO: Transformamos o Index em lista para aplicar o upper() corretamente
             df.columns = [str(c).strip().upper() for c in df.columns]
             
             df_fmt = pd.DataFrame(columns=[c.upper() for c in colunas_alvo])
@@ -200,8 +199,10 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                     st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
             
+            # Adiciona Situação Nota APÓS as tags extraídas do XML
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
+            # Chama especialistas (As análises serão concatenadas ao final dentro de cada módulo)
             processar_icms(df_xs, writer, cod_cliente, df_xe)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
