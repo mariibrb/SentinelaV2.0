@@ -154,7 +154,9 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
                 sep = '\t' if '\t' in raw.splitlines()[0] else ';'
                 df = pd.read_csv(io.StringIO(raw), sep=sep, on_bad_lines='skip', dtype=str)
             
-            df.columns = [c.strip().upper() for c in df.columns]
+            # CORREÇÃO: Transformamos o Index em lista para aplicar o upper() corretamente
+            df.columns = [str(c).strip().upper() for c in df.columns]
+            
             df_fmt = pd.DataFrame(columns=[c.upper() for c in colunas_alvo])
             for col in colunas_alvo:
                 c_up = col.upper()
