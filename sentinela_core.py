@@ -39,7 +39,7 @@ def buscar_tag_recursiva(tag_alvo, no):
             return elemento.text if elemento.text else ""
     return ""
 
-# --- MOTOR DE PROCESSAMENTO XML ---
+# --- MOTOR DE PROCESSAMENTO XML (TODAS AS TAGS RESTAURADAS) ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
         xml_str = content.decode('utf-8', errors='replace')
@@ -65,10 +65,13 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
+            # --- SEÇÃO ICMS / DIFAL / FCP ---
+            icms_no = det.find('.//ICMS')
             v_difal_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
             v_fcp_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
+            
             iest_no_xml = buscar_tag_recursiva('IEST', root) or buscar_tag_recursiva('IE_SUBST', root)
-            iest_item = buscar_tag_recursiva('IEST', det.find('.//ICMS'))
+            iest_item = buscar_tag_recursiva('IEST', icms_no)
             ie_final = iest_item if iest_item != "" else iest_no_xml
 
             linha = {
@@ -76,23 +79,36 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
                 "CNPJ_EMIT": cnpj_emit,
-                "CNPJ_DEST": buscar_tag_recursiva('CNPJ', dest),
+                "CNPJ_DEST": re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', dest)),
                 "UF_EMIT": buscar_tag_recursiva('UF', emit),
                 "UF_DEST": buscar_tag_recursiva('UF', dest),
                 "CFOP": buscar_tag_recursiva('CFOP', prod),
                 "NCM": re.sub(r'\D', '', buscar_tag_recursiva('NCM', prod)).zfill(8),
                 "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
-                "ORIGEM": buscar_tag_recursiva('orig', det.find('.//ICMS')),
-                "CST-ICMS": buscar_tag_recursiva('CST', det.find('.//ICMS')) or buscar_tag_recursiva('CSOSN', det.find('.//ICMS')),
+                "ORIGEM": buscar_tag_recursiva('orig', icms_no),
+                "CST-ICMS": buscar_tag_recursiva('CST', icms_no) or buscar_tag_recursiva('CSOSN', icms_no),
+                "BC-ICMS": safe_float(buscar_tag_recursiva('vBC', icms_no)),
+                "ALQ-ICMS": safe_float(buscar_tag_recursiva('pICMS', icms_no)),
+                "VLR-ICMS": safe_float(buscar_tag_recursiva('vICMS', icms_no)),
+                "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', icms_no)),
+                "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', icms_no)),
+                "IE_SUBST": str(ie_final).strip(),
                 "VAL-DIFAL": v_difal_dest + v_fcp_dest,
                 "VAL-FCP-DEST": v_fcp_dest,
-                "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', imp)),
-                "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', imp)),
                 "VAL-FCP-ST": safe_float(buscar_tag_recursiva('vFCPST', imp)),
                 "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
-                "IE_SUBST": str(ie_final).strip(),
+                
+                # --- SEÇÃO REFORMA / NOVOS IMPOSTOS ---
                 "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
-                "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp))
+                "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp)),
+                
+                # --- SEÇÃO IPI / PIS / COFINS ---
+                "CST-IPI": buscar_tag_recursiva('CST', det.find('.//IPI')),
+                "VLR-IPI": safe_float(buscar_tag_recursiva('vIPI', det.find('.//IPI'))),
+                "CST-PIS": buscar_tag_recursiva('CST', det.find('.//PIS')),
+                "VLR-PIS": safe_float(buscar_tag_recursiva('vPIS', det.find('.//PIS'))),
+                "CST-COFINS": buscar_tag_recursiva('CST', det.find('.//COFINS')),
+                "VLR-COFINS": safe_float(buscar_tag_recursiva('vCOFINS', det.find('.//COFINS')))
             }
             dados_lista.append(linha)
     except: pass
@@ -125,6 +141,8 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
 # --- GERAÇÃO DO EXCEL FINAL ---
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
+    
+    # Colunas padrões para os Gerenciais (CSV/TXT)
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
@@ -150,7 +168,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        workbook = writer.book
         try: gerar_aba_resumo(writer)
         except: pass
         
@@ -169,21 +186,23 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
 
         if not df_xs.empty:
             st_map = {}
+            # Mapeamento de Autenticidade
             arquivos_auth = []
             if ae: arquivos_auth.extend(ae if isinstance(ae, list) else [ae])
             if as_f: arquivos_auth.extend(as_f if isinstance(as_f, list) else [as_f])
             
-            if arquivos_auth:
-                for f in arquivos_auth:
-                    try:
-                        f.seek(0)
-                        df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
-                        df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
-                        st_map.update(df_a.set_index(0)[5].to_dict())
-                    except: pass
+            for f in arquivos_auth:
+                try:
+                    f.seek(0)
+                    df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
+                    df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
+                    st_map.update(df_a.set_index(0)[5].to_dict())
+                except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
+            # --- EXECUÇÃO DAS AUDITORIAS ---
+            # As colunas extraídas (IBS, CBS, FCP, etc) agora seguem para os módulos
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
@@ -191,6 +210,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
 
+    # Lógica de clonagem RET MG (Openpyxl)
     if is_ret:
         try:
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
@@ -200,8 +220,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
                 for sheet_name in wb_modelo.sheetnames:
                     if sheet_name not in wb_final.sheetnames:
-                        source = wb_modelo[sheet_name]
-                        target = wb_final.create_sheet(sheet_name)
+                        source = wb_modelo[sheet_name]; target = wb_final.create_sheet(sheet_name)
                         for row in source.iter_rows():
                             for cell in row:
                                 new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
