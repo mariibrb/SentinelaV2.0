@@ -40,7 +40,7 @@ def buscar_tag_recursiva(tag_alvo, no):
     return ""
 
 def tratar_ncm_texto(ncm):
-    """Preserva o formato texto do NCM conforme definido pelo usuário."""
+    """Garante que o NCM seja lido como texto puro e limpo."""
     if pd.isna(ncm) or ncm == "": return ""
     return re.sub(r'\D', '', str(ncm)).strip()
 
@@ -185,7 +185,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Gravação das Abas Gerenciais Restauradas
         df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
