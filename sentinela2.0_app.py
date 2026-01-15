@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS TOTALMENTE LIMPO E BOTÃO SIDEBAR ESTILIZADO ---
+# --- CSS REFORMULADO: BOTÃO SOFISTICADO ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -14,7 +14,35 @@ st.markdown("""
     .stApp { background-color: #F0F2F6; }
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
     
-    /* Remove balões e barras brancas automáticas */
+    /* Ajuste de Botão do Sidebar - ESTILO PREMIUM */
+    div[data-testid="stSidebar"] .stButton > button {
+        background-color: #ffffff !important;
+        color: #FF6F00 !important;
+        border: 1px solid #FF6F00 !important;
+        border-radius: 25px !important;
+        padding: 10px 20px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1px !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05) !important;
+        transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        width: 100% !important;
+    }
+
+    div[data-testid="stSidebar"] .stButton > button:hover {
+        background-color: #FF6F00 !important;
+        color: #ffffff !important;
+        box-shadow: 0 8px 15px rgba(255, 111, 0, 0.2) !important;
+        transform: translateY(-2px) !important;
+        border: 1px solid #FF6F00 !important;
+    }
+
+    div[data-testid="stSidebar"] .stButton > button:active {
+        transform: translateY(1px) !important;
+    }
+
+    /* Resto do Layout Limpo */
     [data-testid="stVerticalBlockBorderWrapper"],
     [data-testid="stVerticalBlock"],
     [data-testid="stVerticalBlock"] > div,
@@ -33,31 +61,10 @@ st.markdown("""
     .barra-laranja-fina {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
-        border: none;
         margin: 5px 0 20px 0;
         width: 100%;
     }
 
-    /* Estilização do Botão de Download no Sidebar */
-    [data-testid="stSidebar"] .stButton > button {
-        background: #ffffff !important;
-        color: #FF6F00 !important;
-        border: 2px solid #FF6F00 !important;
-        border-radius: 20px !important;
-        font-weight: 600 !important;
-        height: 3rem !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 6px rgba(255, 111, 0, 0.1) !important;
-    }
-
-    [data-testid="stSidebar"] .stButton > button:hover {
-        background: #FF6F00 !important;
-        color: #ffffff !important;
-        box-shadow: 0 6px 12px rgba(255, 111, 0, 0.2) !important;
-        transform: translateY(-2px);
-    }
-
-    /* Botão Principal do Conteúdo (Iniciar Análise) */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -147,7 +154,6 @@ if selecao:
 
     st.markdown(f"<div class='status-container'>📍 <b>Empresa selecionada:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
-    # Validação GitHub
     if verificar_arquivo_github(f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"):
         st.success(f"✅ **Base de Impostos localizada com sucesso!**")
     else:
@@ -183,14 +189,8 @@ if selecao:
             if xmls and regime:
                 with st.spinner("Processando..."):
                     try:
-                        # Chamada das funções core do Sentinela
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
-                        
                         st.balloons()
-                        st.success("Análise concluída com sucesso!")
                         st.download_button("💾 BAIXAR RELATÓRIO AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
-                    except Exception as e: 
-                        st.error(f"Erro durante o processamento: {e}")
-            else:
-                st.warning("Certifique-se de carregar os XMLs e selecionar o Regime.")
+                    except Exception as e: st.error(f"Erro: {e}")
