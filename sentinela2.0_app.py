@@ -6,81 +6,86 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS ULTRA ESPECÍFICO (PARA VENCER AS LIMITAÇÕES) ---
+# --- CSS DE ALTO NÍVEL (FRONT-END PREMIUM) ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     .stApp { background-color: #F8F9FB; }
     
-    /* ESTILIZAÇÃO DO SIDEBAR */
+    /* SIDEBAR DESIGN */
     [data-testid="stSidebar"] { 
         background-color: #FFFFFF !important; 
-        border-right: 1px solid #E0E0E0; 
+        border-right: 1px solid #EAEAEA; 
     }
 
-    /* O BOTÃO DESENHADO (SIDEBAR) */
-    /* Este seletor ignora as travas do Streamlit e redesenha o botão do zero */
-    div[data-testid="stSidebar"] button {
-        background: #FFFFFF !important;
+    /* O BOTÃO DO SIDEBAR (REESTILIZAÇÃO TOTAL) */
+    /* Forçando o estilo no link de download e no botão interno */
+    div[data-testid="stSidebar"] .stDownloadButton button, 
+    div[data-testid="stSidebar"] .stDownloadButton a {
+        background-color: #FFFFFF !important;
         color: #FF6F00 !important;
-        border: 2px solid #FF6F00 !important;
-        border-radius: 50px !important; /* Totalmente arredondado */
-        padding: 0.6rem 1.5rem !important;
+        border: 1.5px solid #FF6F00 !important;
+        border-radius: 50px !important;
+        padding: 0.5rem 1rem !important;
         font-weight: 700 !important;
-        font-size: 14px !important;
+        font-size: 13px !important;
         text-transform: uppercase !important;
-        letter-spacing: 1.2px !important;
-        box-shadow: 6px 6px 12px #e0e0e0, -6px -6px 12px #ffffff !important; /* Efeito de relevo */
-        transition: all 0.3s ease-in-out !important;
-        cursor: pointer !important;
-        border: none !important;
+        letter-spacing: 1px !important;
+        text-decoration: none !important;
         display: flex !important;
         justify-content: center !important;
         align-items: center !important;
-        margin: 10px 0 !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+        width: 100% !important;
+        cursor: pointer !important;
     }
 
-    div[data-testid="stSidebar"] button:hover {
-        background: linear-gradient(145deg, #ff7e1a, #e66400) !important;
+    /* EFEITO HOVER - O "PULO" DO GATO */
+    div[data-testid="stSidebar"] .stDownloadButton button:hover,
+    div[data-testid="stSidebar"] .stDownloadButton a:hover {
+        background: linear-gradient(135deg, #FF6F00 0%, #FF9100 100%) !important;
+        color: #FFFFFF !important;
+        border-color: transparent !important;
+        box-shadow: 0 10px 20px rgba(255, 111, 0, 0.25) !important;
+        transform: translateY(-3px) scale(1.02) !important;
+    }
+
+    /* BOTÃO PRINCIPAL (INICIAR ANÁLISE) */
+    .stButton > button {
+        background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
-        box-shadow: 0 10px 20px rgba(255, 111, 0, 0.3) !important;
-        transform: translateY(-3px) !important;
+        border-radius: 12px !important;
+        font-weight: bold !important;
+        height: 3.5rem !important;
+        border: none !important;
+        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.2) !important;
+        transition: 0.3s !important;
+    }
+    
+    .stButton > button:hover {
+        box-shadow: 0 6px 20px rgba(255, 111, 0, 0.4) !important;
+        transform: translateY(-1px);
     }
 
-    div[data-testid="stSidebar"] button:active {
-        transform: translateY(0px) !important;
-        box-shadow: inset 4px 4px 8px #d15a00, inset -4px -4px 8px #ff8400 !important;
-    }
-
-    /* TITULOS E ESTRUTURA */
-    .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 5px; }
+    /* TITULOS */
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
     .barra-laranja-fina {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
-        margin: 5px 0 20px 0;
+        margin: 5px 0 25px 0;
         width: 100%;
     }
 
-    /* BOTÃO PRINCIPAL DE ANÁLISE */
-    .stButton > button {
-        background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
-        color: white !important;
-        border-radius: 15px !important;
-        font-weight: bold !important;
-        height: 3.5rem !important;
-        border: none !important;
-        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.2) !important;
-    }
-
+    /* STATUS CONTAINER */
     .status-container {
         padding: 15px;
         border-left: 5px solid #FF6F00;
         background-color: #FFFFFF;
         border-radius: 10px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
         margin: 15px 0;
     }
 </style>
@@ -125,7 +130,7 @@ with st.sidebar:
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO', index=False)
         return output.getvalue()
     
-    # O Botão que será estilizado pelo CSS acima
+    # Este botão agora será capturado pelo CSS sofisticado
     st.download_button("📥 Modelo Bases Tributárias", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CONTEÚDO PRINCIPAL ---
