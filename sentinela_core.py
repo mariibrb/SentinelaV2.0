@@ -39,13 +39,10 @@ def buscar_tag_recursiva(tag_alvo, no):
             return elemento.text if elemento.text else ""
     return ""
 
-def normalizar_ncm_absoluto(ncm):
-    """Normalização para garantir match independente da formatação original."""
-    if pd.isna(ncm) or ncm == "": return "00000000"
-    limpo = re.sub(r'\D', '', str(ncm))
-    if '.' in str(ncm):
-        limpo = re.sub(r'\D', '', str(ncm).split('.')[0])
-    return limpo.zfill(8)
+def tratar_ncm_texto(ncm):
+    """Preserva o formato texto do NCM conforme definido pelo usuário."""
+    if pd.isna(ncm) or ncm == "": return ""
+    return re.sub(r'\D', '', str(ncm)).strip()
 
 # --- MOTOR DE PROCESSAMENTO XML ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
@@ -87,7 +84,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "UF_EMIT": buscar_tag_recursiva('UF', emit),
                 "UF_DEST": buscar_tag_recursiva('UF', dest),
                 "CFOP": buscar_tag_recursiva('CFOP', prod),
-                "NCM": normalizar_ncm_absoluto(buscar_tag_recursiva('NCM', prod)),
+                "NCM": tratar_ncm_texto(buscar_tag_recursiva('NCM', prod)),
                 "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
                 "ORIGEM": buscar_tag_recursiva('orig', icms_no),
                 "CST-ICMS": buscar_tag_recursiva('CST', icms_no) or buscar_tag_recursiva('CSOSN', icms_no),
@@ -147,7 +144,7 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
     for f in lista:
         f.seek(0)
         try:
-            if f.name.endswith(('.xlsx', '.xls')):
+            if f.name.lower().endswith(('.xlsx', '.xls')):
                 df = pd.read_excel(f)
             else:
                 raw = f.read().decode('latin1', errors='replace')
@@ -155,13 +152,13 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
                 df = pd.read_csv(io.StringIO(raw), sep=sep, on_bad_lines='skip', dtype=str)
             
             df.columns = [str(c).strip().upper() for c in df.columns]
-            
             df_fmt = pd.DataFrame(columns=[c.upper() for c in colunas_alvo])
+            
             for col in colunas_alvo:
                 c_up = col.upper()
                 if c_up in df.columns:
                     if 'NCM' in c_up:
-                        df_fmt[c_up] = df[c_up].apply(normalizar_ncm_absoluto)
+                        df_fmt[c_up] = df[c_up].apply(tratar_ncm_texto)
                     else:
                         df_fmt[c_up] = df[c_up]
                 else:
@@ -171,7 +168,9 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
                 if any(k in col for k in ['VLR', 'BC', 'VAL', 'QTDE', 'ICMS', 'PIS', 'COF', 'IPI']):
                     df_fmt[col] = df_fmt[col].apply(safe_float)
             dfs.append(df_fmt)
-        except: continue
+        except Exception as e:
+            st.warning(f"Aviso no arquivo {f.name}: {e}")
+            
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=colunas_alvo)
 
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
@@ -185,6 +184,8 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         try: gerar_aba_resumo(writer)
         except: pass
+        
+        # Gravação das Abas Gerenciais Restauradas
         df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
