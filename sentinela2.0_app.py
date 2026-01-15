@@ -6,7 +6,7 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS TOTALMENTE LIMPO ---
+# --- CSS TOTALMENTE LIMPO E BOTÃO SIDEBAR ESTILIZADO ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
@@ -38,17 +38,26 @@ st.markdown("""
         width: 100%;
     }
 
-    /* Cards brancos apenas nos inputs */
-    .card {
-        background-color: #FFFFFF !important;
-        padding: 25px;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
+    /* Estilização do Botão de Download no Sidebar */
+    [data-testid="stSidebar"] .stButton > button {
+        background: #ffffff !important;
+        color: #FF6F00 !important;
+        border: 2px solid #FF6F00 !important;
+        border-radius: 20px !important;
+        font-weight: 600 !important;
+        height: 3rem !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 6px rgba(255, 111, 0, 0.1) !important;
     }
 
-    h3 { color: #444444 !important; font-size: 1.1rem; margin-top: 15px !important; }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: #FF6F00 !important;
+        color: #ffffff !important;
+        box-shadow: 0 6px 12px rgba(255, 111, 0, 0.2) !important;
+        transform: translateY(-2px);
+    }
 
+    /* Botão Principal do Conteúdo (Iniciar Análise) */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -100,12 +109,14 @@ with st.sidebar:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
+    
     def criar_gabarito():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO', index=False)
         return output.getvalue()
-    st.download_button("📥 Baixar Gabarito NCM", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
+    
+    st.download_button("📥 Modelo Bases Tributárias", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CONTEÚDO PRINCIPAL ---
 st.markdown(f"""
@@ -172,8 +183,14 @@ if selecao:
             if xmls and regime:
                 with st.spinner("Processando..."):
                     try:
+                        # Chamada das funções core do Sentinela
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
+                        
                         st.balloons()
+                        st.success("Análise concluída com sucesso!")
                         st.download_button("💾 BAIXAR RELATÓRIO AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
-                    except Exception as e: st.error(f"Erro: {e}")
+                    except Exception as e: 
+                        st.error(f"Erro durante o processamento: {e}")
+            else:
+                st.warning("Certifique-se de carregar os XMLs e selecionar o Regime.")
