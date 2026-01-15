@@ -37,29 +37,30 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
         cst_esp = "00"
         fundamentacao = "Regra Geral."
 
-        # PASSO 1: VALIDAÇÃO POR CFOP DE ST (5405 / 6405 / 6404)
+        # PASSO 1: VALIDAÇÃO POR CFOP DE ST (5405 / 6405 / 6404 / 5667)
         if cfop in ['5405', '6405', '6404', '5667']:
             cst_esp = "60"
             alq_esp = 0.0
             fundamentacao = "CFOP de ST (Substituído): Esperado CST 60."
 
-        # PASSO 2: CRUZAMENTO COM COMPRAS (SÓ MUDA SE JÁ NÃO FOR 60)
+        # PASSO 2: CRUZAMENTO COM COMPRAS
         elif ncm_xml in ncms_com_st_na_compra:
             cst_esp = "60"
             alq_esp = 0.0
             fundamentacao = "ST identificado em notas de compra do mesmo NCM."
 
-        # PASSO 3: GABARITO (SOBREPÕE OS ANTERIORES SE ENCONTRADO)
+        # PASSO 3: GABARITO (SOBREPÕE COM TRAVA DE SEGURANÇA PARA ST)
         if not base_gabarito.empty and ncm_xml in base_gabarito['NCM'].values:
             g = base_gabarito[base_gabarito['NCM'] == ncm_xml].iloc[0]
             col_cst = [c for c in base_gabarito.columns if 'CST' in c]
             if col_cst:
                 novo_cst = str(g[col_cst[0]]).strip().split('.')[0].zfill(2)
-                # Se o XML é 60 e o Gabarito diz 20, mas o CFOP é de ST, mantemos 60
-                if cst_xml == "60" and novo_cst == "20" and cfop in ['5405', '6405', '6404']:
+                
+                # TRAVA: Se o XML é 60 e o Gabarito diz 20, mas o CFOP ou a compra indicam ST, mantém 60
+                if cst_xml == "60" and novo_cst == "20" and (cfop in ['5405', '6405', '6404'] or ncm_xml in ncms_com_st_na_compra):
                     cst_esp = "60"
                     alq_esp = 0.0
-                    fundamentacao = "Gabarito sugere 20, mas CFOP de ST valida o 60 do XML."
+                    fundamentacao = "Gabarito sugere 20, mas CFOP/Entrada de ST valida o 60 do XML."
                 else:
                     cst_esp = novo_cst
                     fundamentacao = "Conforme Gabarito Tributário (NCM)."
@@ -68,7 +69,7 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
             if col_alq and uf_orig != uf_dest:
                 alq_esp = float(g[col_alq[0]])
 
-        # PASSO 4: LÓGICA INTERESTADUAL PADRÃO (SÓ SE NÃO TIVER GABARITO NEM ST)
+        # PASSO 4: LÓGICA INTERESTADUAL PADRÃO
         elif uf_orig != uf_dest and cst_esp not in ['60', '10']:
             if str(r.get('ORIGEM', '0')) in ['1', '2', '3', '8']: alq_esp = 4.0
             else:
@@ -85,12 +86,16 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
         status_base = "✅ Integral"
         if cst_xml in ['60', '10', '70']: status_base = "✅ ST/Retido"
         elif cst_xml == '20' or cst_esp == '20': status_base = "✅ Redução Base"
-        elif abs(bc_icms_xml - vprod) > 0.10: status_base = "⚠️ Base Reduzida"
+        else: status_base = "✅ Integral" if abs(bc_icms_xml - vprod) < 0.10 else "⚠️ Base Reduzida"
+        
+        status_destaque = "✅ OK"
+        if cst_xml in ['00', '10', '20', '70'] and vlr_icms_xml <= 0 and alq_esp > 0: status_destaque = "❌ Falta Destaque"
+        elif cst_xml in ['40', '41', '50', '60'] and vlr_icms_xml > 0: status_destaque = "⚠️ Destaque Indevido"
 
-        return pd.Series([cst_esp, alq_esp, diag_cst, diag_alq, status_base, vlr_comp_final, fundamentacao])
+        return pd.Series([cst_esp, alq_esp, diag_cst, diag_alq, status_destaque, status_base, vlr_comp_final, fundamentacao])
 
     # --- EXECUÇÃO ---
-    analises = ['CST_ESPERADA', 'ALQ_ESPERADA', 'DIAG_CST', 'DIAG_ALQUOTA', 'STATUS_BASE', 'ICMS_COMPLEMENTAR', 'FUNDAMENTAÇÃO']
+    analises = ['CST_ESPERADA', 'ALQ_ESPERADA', 'DIAG_CST', 'DIAG_ALQUOTA', 'STATUS_DESTAQUE', 'STATUS_BASE', 'ICMS_COMPLEMENTAR', 'FUNDAMENTAÇÃO']
     df_i[analises] = df_i.apply(audit_icms_linha, axis=1)
 
     prioridade = ['NUM_NF', 'CFOP', 'NCM', 'VPROD', 'CST-ICMS', 'CST_ESPERADA', 'DIAG_CST', 'ALQ-ICMS', 'ALQ_ESPERADA', 'DIAG_ALQUOTA', 'VAL-IBS', 'VAL-CBS', 'Situação Nota']
