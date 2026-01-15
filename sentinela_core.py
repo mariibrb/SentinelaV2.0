@@ -18,9 +18,9 @@ try:
     from Auditorias.audit_difal import processar_difal
     from Apuracoes.apuracao_difal import gerar_resumo_uf
 except ImportError as e:
-    st.error(f"⚠️ Erro de Dependência: Verifique se as pastas Auditorias e Apuracoes existem. Erro: {e}")
+    st.error(f"⚠️ Erro de Dependência: Verifique as pastas Auditorias e Apuracoes. Detalhe: {e}")
 
-# --- UTILITÁRIOS DE TRATAMENTO DE DADOS ---
+# --- UTILITÁRIOS DE TRATAMENTO ---
 def safe_float(v):
     if v is None or pd.isna(v): return 0.0
     txt = str(v).strip().upper()
@@ -39,7 +39,7 @@ def buscar_tag_recursiva(tag_alvo, no):
             return elemento.text if elemento.text else ""
     return ""
 
-# --- MOTOR DE PROCESSAMENTO XML (TODAS AS TAGS RESTAURADAS) ---
+# --- MOTOR DE PROCESSAMENTO XML ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
         xml_str = content.decode('utf-8', errors='replace')
@@ -104,9 +104,8 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             }
             dados_lista.append(linha)
     except Exception as e:
-        print(f"Erro ao ler item do XML: {e}")
+        print(f"Erro item XML: {e}")
 
-# --- TRATAMENTO DE ARQUIVOS ZIP E RECURSIVIDADE ---
 def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
     dados_lista = []
     if not files: return pd.DataFrame(), pd.DataFrame()
@@ -131,17 +130,12 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
             
     df_total = pd.DataFrame(dados_lista)
     if df_total.empty: return pd.DataFrame(), pd.DataFrame()
-    
-    ent = df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy()
-    sai = df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
-    return ent, sai
+    return df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy(), df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
 
-# --- PROCESSADOR DE ARQUIVOS GERENCIAIS (TXT/CSV/EXCEL) ---
 def ler_gerencial_robusto(arquivos, colunas_alvo):
     if not arquivos: return pd.DataFrame(columns=colunas_alvo)
     lista = arquivos if isinstance(arquivos, list) else [arquivos]
     dfs = []
-    
     for f in lista:
         f.seek(0)
         try:
@@ -149,36 +143,24 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
                 df = pd.read_excel(f)
             else:
                 raw = f.read().decode('latin1', errors='replace')
-                # Tenta detectar separador (TAB ou Ponto e Vírgula)
                 sep = '\t' if '\t' in raw.splitlines()[0] else ';'
                 df = pd.read_csv(io.StringIO(raw), sep=sep, on_bad_lines='skip', dtype=str)
             
-            # Ajuste de colunas caso o arquivo tenha nomes diferentes
             df.columns = [c.strip().upper() for c in df.columns]
             df_fmt = pd.DataFrame(columns=[c.upper() for c in colunas_alvo])
-            
             for col in colunas_alvo:
-                col_up = col.upper()
-                if col_up in df.columns:
-                    df_fmt[col_up] = df[col_up]
-                else:
-                    df_fmt[col_up] = "0"
+                c_up = col.upper()
+                df_fmt[c_up] = df[c_up] if c_up in df.columns else "0"
             
-            # Converte valores numéricos
             for col in df_fmt.columns:
                 if any(k in col for k in ['VLR', 'BC', 'VAL', 'QTDE', 'ICMS', 'PIS', 'COF', 'IPI']):
                     df_fmt[col] = df_fmt[col].apply(safe_float)
-            
             dfs.append(df_fmt)
-        except Exception as e:
-            st.warning(f"Aviso no arquivo {f.name}: {e}")
-            
+        except: continue
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=colunas_alvo)
 
-# --- GERAÇÃO DO EXCEL FINAL ---
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
-    
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
@@ -188,35 +170,30 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         try: gerar_aba_resumo(writer)
         except: pass
-        
-        # Grava Gerenciais
         df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
         if not df_xs.empty:
-            # Lógica de Autenticidade (Mapeia Situação da Nota)
             st_map = {}
             for f_auth in ([ae] if ae else []) + ([as_f] if as_f else []):
                 if not f_auth: continue
                 try:
                     f_auth.seek(0)
                     df_a = pd.read_excel(f_auth, header=None) if f_auth.name.endswith('.xlsx') else pd.read_csv(f_auth, header=None, sep=None, engine='python')
-                    # Pega a chave e a situação (ajuste conforme o layout da sua planilha de autenticidade)
                     df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
                     st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chama Especialistas
-            processar_icms(df_xs, writer, cod_cliente)
+            # --- CHAMADA DOS ESPECIALISTAS COM DF_XE PARA CRUZAMENTO ---
+            processar_icms(df_xs, writer, cod_cliente, df_xe)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
             processar_difal(df_xs, writer)
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
 
-    # --- CLONAGEM RET MG ---
     if is_ret:
         try:
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
@@ -235,7 +212,5 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                 output_ret = io.BytesIO()
                 wb_final.save(output_ret)
                 return output_ret.getvalue()
-        except Exception as e:
-            st.error(f"Erro ao mesclar RET: {e}")
-
+        except: pass
     return output.getvalue()
