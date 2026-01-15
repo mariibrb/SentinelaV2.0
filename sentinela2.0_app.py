@@ -97,7 +97,7 @@ if selecao:
     c1, c2, c3 = st.columns(3)
     
     with c1:
-st.markdown("**📁 XML (ZIP)**")
+        st.markdown("**📁 XML (ZIP)**")
         xmls = st.file_uploader("Upload de XMLs ou ZIP", type=['zip', 'xml'], accept_multiple_files=True, key="xml_up")
 
     with c2:
