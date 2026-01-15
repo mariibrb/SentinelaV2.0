@@ -6,58 +6,57 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS REFORMULADO: BOTÃO SOFISTICADO ---
+# --- CSS ULTRA ESPECÍFICO (PARA VENCER AS LIMITAÇÕES) ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
-    .stApp { background-color: #F0F2F6; }
-    [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 3px solid #FF6F00; }
+    .stApp { background-color: #F8F9FB; }
     
-    /* Ajuste de Botão do Sidebar - ESTILO PREMIUM */
-    div[data-testid="stSidebar"] .stButton > button {
-        background-color: #ffffff !important;
+    /* ESTILIZAÇÃO DO SIDEBAR */
+    [data-testid="stSidebar"] { 
+        background-color: #FFFFFF !important; 
+        border-right: 1px solid #E0E0E0; 
+    }
+
+    /* O BOTÃO DESENHADO (SIDEBAR) */
+    /* Este seletor ignora as travas do Streamlit e redesenha o botão do zero */
+    div[data-testid="stSidebar"] button {
+        background: #FFFFFF !important;
         color: #FF6F00 !important;
-        border: 1px solid #FF6F00 !important;
-        border-radius: 25px !important;
-        padding: 10px 20px !important;
-        font-weight: 600 !important;
+        border: 2px solid #FF6F00 !important;
+        border-radius: 50px !important; /* Totalmente arredondado */
+        padding: 0.6rem 1.5rem !important;
+        font-weight: 700 !important;
         font-size: 14px !important;
         text-transform: uppercase !important;
-        letter-spacing: 1px !important;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05) !important;
-        transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
-        width: 100% !important;
-    }
-
-    div[data-testid="stSidebar"] .stButton > button:hover {
-        background-color: #FF6F00 !important;
-        color: #ffffff !important;
-        box-shadow: 0 8px 15px rgba(255, 111, 0, 0.2) !important;
-        transform: translateY(-2px) !important;
-        border: 1px solid #FF6F00 !important;
-    }
-
-    div[data-testid="stSidebar"] .stButton > button:active {
-        transform: translateY(1px) !important;
-    }
-
-    /* Resto do Layout Limpo */
-    [data-testid="stVerticalBlockBorderWrapper"],
-    [data-testid="stVerticalBlock"],
-    [data-testid="stVerticalBlock"] > div,
-    .stColumn > div,
-    .element-container {
-        background-color: transparent !important;
+        letter-spacing: 1.2px !important;
+        box-shadow: 6px 6px 12px #e0e0e0, -6px -6px 12px #ffffff !important; /* Efeito de relevo */
+        transition: all 0.3s ease-in-out !important;
+        cursor: pointer !important;
         border: none !important;
-        box-shadow: none !important;
-        padding: 0 !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        margin: 10px 0 !important;
     }
 
+    div[data-testid="stSidebar"] button:hover {
+        background: linear-gradient(145deg, #ff7e1a, #e66400) !important;
+        color: white !important;
+        box-shadow: 0 10px 20px rgba(255, 111, 0, 0.3) !important;
+        transform: translateY(-3px) !important;
+    }
+
+    div[data-testid="stSidebar"] button:active {
+        transform: translateY(0px) !important;
+        box-shadow: inset 4px 4px 8px #d15a00, inset -4px -4px 8px #ff8400 !important;
+    }
+
+    /* TITULOS E ESTRUTURA */
     .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 5px; }
     .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
     .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
-
     .barra-laranja-fina {
         height: 2px;
         background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
@@ -65,20 +64,23 @@ st.markdown("""
         width: 100%;
     }
 
+    /* BOTÃO PRINCIPAL DE ANÁLISE */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
-        border-radius: 12px !important;
+        border-radius: 15px !important;
         font-weight: bold !important;
         height: 3.5rem !important;
         border: none !important;
+        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.2) !important;
     }
 
     .status-container {
-        padding: 12px;
+        padding: 15px;
         border-left: 5px solid #FF6F00;
-        background-color: #E8EAEE;
-        border-radius: 5px;
+        background-color: #FFFFFF;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.03);
         margin: 15px 0;
     }
 </style>
@@ -123,6 +125,7 @@ with st.sidebar:
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO', index=False)
         return output.getvalue()
     
+    # O Botão que será estilizado pelo CSS acima
     st.download_button("📥 Modelo Bases Tributárias", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CONTEÚDO PRINCIPAL ---
