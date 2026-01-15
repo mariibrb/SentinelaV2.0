@@ -6,39 +6,45 @@ from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS: FOCO NO BOTÃO PREMIUM E SIDEBAR CLARO ---
+# --- CSS ULTRA-ESPECÍFICO (PARA FORÇAR AS CORES NO BOTÃO) ---
 st.markdown("""
 <style>
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     .stApp { background-color: #F0F2F6; }
     
-    /* SIDEBAR VOLTANDO AO BRANCO COM BORDA LARANJA */
+    /* SIDEBAR CLÁSSICA SENTINELA */
     [data-testid="stSidebar"] { 
         background-color: #FFFFFF !important; 
         border-right: 3px solid #FF6F00; 
     }
     
-    /* O BOTÃO ESTILIZADO (SIDEBAR) - ESTILO PÍLULA PREMIUM */
-    div[data-testid="stSidebar"] .stDownloadButton button {
-        background: linear-gradient(145deg, #FF6F00, #FF8C00) !important;
+    /* O BOTÃO DESENHADO (FORÇANDO A COR LARANJA) */
+    /* Usamos seletores múltiplos para garantir que o Streamlit não ignore */
+    div[data-testid="stSidebar"] .stDownloadButton > button,
+    div[data-testid="stSidebar"] .stDownloadButton > button:first-child {
+        background: linear-gradient(135deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
         border: none !important;
-        border-radius: 50px !important; /* Totalmente arredondado */
+        border-radius: 50px !important; /* Estilo Pílula */
         padding: 0.6rem 1.2rem !important;
         font-weight: 700 !important;
         font-size: 14px !important;
-        letter-spacing: 0.5px !important;
-        box-shadow: 4px 4px 10px rgba(255, 111, 0, 0.2), 
-                    inset -2px -2px 6px rgba(0,0,0,0.1) !important;
-        transition: all 0.3s ease !important;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1) !important;
+        box-shadow: 0 4px 10px rgba(255, 111, 0, 0.3) !important;
+        transition: all 0.3s ease-in-out !important;
         width: 100% !important;
+        display: inline-flex !important;
+        justify-content: center !important;
+        align-items: center !important;
     }
 
-    div[data-testid="stSidebar"] .stDownloadButton button:hover {
+    /* EFEITO AO PASSAR O MOUSE (HOVER) */
+    div[data-testid="stSidebar"] .stDownloadButton > button:hover {
+        background: linear-gradient(135deg, #FF8C00 0%, #FFB347 100%) !important;
+        box-shadow: 0 6px 15px rgba(255, 111, 0, 0.5) !important;
         transform: translateY(-2px) !important;
-        box-shadow: 0 8px 15px rgba(255, 111, 0, 0.4) !important;
-        filter: brightness(1.1) !important;
+        color: #FFFFFF !important;
     }
 
     /* TÍTULOS E ESTRUTURA ORIGINAL */
@@ -53,7 +59,7 @@ st.markdown("""
         width: 100%;
     }
 
-    /* BOTÃO PRINCIPAL (INICIAR ANÁLISE) */
+    /* BOTÃO DE ANÁLISE (CONTEÚDO) */
     .stButton > button {
         background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
@@ -61,7 +67,6 @@ st.markdown("""
         font-weight: bold !important;
         height: 3.5rem !important;
         border: none !important;
-        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.15) !important;
     }
 
     .status-container {
@@ -74,7 +79,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNÇÕES (PRESERVADAS) ---
+# --- FUNÇÕES ---
 @st.cache_data(ttl=600)
 def carregar_base_clientes():
     caminhos = [".streamlit/Clientes Ativos.xlsx - EMPRESAS.csv", ".streamlit/Clientes Ativos.xlsx"]
@@ -113,6 +118,7 @@ with st.sidebar:
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO', index=False)
         return output.getvalue()
     
+    # Este botão AGORA DEVE aparecer em Laranja degradê e pílula
     st.download_button("📥 Modelo Bases Tributárias", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CONTEÚDO PRINCIPAL ---
