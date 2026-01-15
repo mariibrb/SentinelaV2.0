@@ -93,7 +93,7 @@ if selecao:
             with c2_stat: st.warning("⚠️ Base RET não localizada")
 
     # --- CENTRAL DE ARQUIVOS COM NOMES COMPLETOS ---
-    st.markdown("### 📥 Passo 3: Central de Arquivos")
+    st.markdown("### Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
     with c1:
