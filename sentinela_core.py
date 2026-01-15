@@ -21,17 +21,14 @@ try:
     except ImportError:
         from Apuracoes.apuracao_difal import gerar_resumo_uf
 except ImportError as e:
-    st.error(f"Erro Crítico de Dependência: {e}")
-    if 'gerar_resumo_uf' not in locals():
-        def gerar_resumo_uf(*args, **kwargs): pass
-    if 'processar_icms' not in locals():
-        def processar_icms(*args, **kwargs): pass
-    if 'processar_ipi' not in locals():
-        def processar_ipi(*args, **kwargs): pass
-    if 'processar_pc' not in locals():
-        def processar_pc(*args, **kwargs): pass
-    if 'processar_difal' not in locals():
-        def processar_difal(*args, **kwargs): pass
+    st.error(f"Erro Crítico de Dependência no Core: {e}")
+    # Fallbacks para evitar crash total se um módulo falhar
+    if 'gerar_aba_resumo' not in locals(): def gerar_aba_resumo(*args): pass
+    if 'processar_icms' not in locals(): def processar_icms(*args): pass
+    if 'processar_ipi' not in locals(): def processar_ipi(*args): pass
+    if 'processar_pc' not in locals(): def processar_pc(*args): pass
+    if 'processar_difal' not in locals(): def processar_difal(*args): pass
+    if 'gerar_resumo_uf' not in locals(): def gerar_resumo_uf(*args): pass
 
 # --- UTILITÁRIOS DE CONVERSÃO ---
 
@@ -46,7 +43,7 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML COM TRIAGEM E RECURSIVIDADE ---
+# --- MOTOR DE PROCESSAMENTO XML ---
 
 def buscar_tag_recursiva(tag_alvo, no):
     if no is None: return ""
@@ -139,13 +136,15 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
     if df_total.empty: return pd.DataFrame(), pd.DataFrame()
     return df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy(), df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
 
+# --- GERAÇÃO DO EXCEL FINAL ---
+
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
     def ler_csv_estilo_clipboard(arquivos, colunas_alvo):
-        if arquivos is None: return pd.DataFrame()
+        if arquivos is None: return pd.DataFrame(columns=colunas_alvo)
         lista = arquivos if isinstance(arquivos, list) else [arquivos]
         dfs = []
         for f in lista:
@@ -160,7 +159,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                         df[col] = df[col].apply(safe_float)
                 dfs.append(df)
             except: pass
-        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=colunas_alvo)
 
     df_ger_ent = ler_csv_estilo_clipboard(ge, cols_ent)
     df_ger_sai = ler_csv_estilo_clipboard(gs, cols_sai)
@@ -172,12 +171,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         
         def gravar_df_como_tabela(df, sheet_name, table_name):
             if df.empty: return
-            worksheet = workbook.add_worksheet(sheet_name)
-            writer.sheets[sheet_name] = worksheet
-            header = df.columns.tolist()
-            data = df.values.tolist()
-            worksheet.add_table(0, 0, len(df), len(df.columns) - 1, {
-                'data': data, 'columns': [{'header': col} for col in header],
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            worksheet = writer.sheets[sheet_name]
+            (max_row, max_col) = df.shape
+            worksheet.add_table(0, 0, max_row, max_col - 1, {
+                'columns': [{'header': col} for col in df.columns],
                 'name': table_name, 'style': 'TableStyleMedium2'
             })
 
@@ -185,24 +183,23 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         gravar_df_como_tabela(df_ger_sai, 'GERENCIAL_SAIDAS', 'TabelaSaidas')
 
         if not df_xs.empty:
-            # Reincorporando o mapeamento de situação da nota caso 'as_f' ou 'ae' existam
             st_map = {}
-            # Unindo autenticidades de entrada e saída para o mapeamento
             arquivos_auth = []
             if ae: arquivos_auth.extend(ae if isinstance(ae, list) else [ae])
             if as_f: arquivos_auth.extend(as_f if isinstance(as_f, list) else [as_f])
             
             if arquivos_auth:
-                try:
-                    for f in arquivos_auth:
+                for f in arquivos_auth:
+                    try:
                         f.seek(0)
                         df_a = pd.read_excel(f, header=None) if f.name.endswith('.xlsx') else pd.read_csv(f, header=None, sep=None, engine='python')
                         df_a[0] = df_a[0].astype(str).str.replace('NFe', '').str.strip()
                         st_map.update(df_a.set_index(0)[5].to_dict())
-                except: pass
+                    except: pass
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
+            # Chamadas dos especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
@@ -210,22 +207,32 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
 
+    # --- LÓGICA DE CLONAGEM DO RET (OPENPYXL) ---
     if is_ret:
         try:
+            # Importante: No Streamlit Cloud, o arquivo de modelo precisa ser baixado ou estar no repo
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
             if os.path.exists(caminho_modelo):
                 output.seek(0)
                 wb_final = openpyxl.load_workbook(output)
                 wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
                 for sheet_name in wb_modelo.sheetnames:
-                    if sheet_name not in ['GERENCIAL_ENTRADAS', 'GERENCIAL_SAIDAS']:
-                        source = wb_modelo[sheet_name]; target = wb_final.create_sheet(sheet_name)
+                    if sheet_name not in wb_final.sheetnames:
+                        source = wb_modelo[sheet_name]
+                        target = wb_final.create_sheet(sheet_name)
                         for row in source.iter_rows():
                             for cell in row:
                                 new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
                                 if cell.has_style:
-                                    new_cell.font, new_cell.border, new_cell.fill, new_cell.number_format, new_cell.alignment = copy(cell.font), copy(cell.border), copy(cell.fill), copy(cell.number_format), copy(cell.alignment)
-                        for col, dim in source.column_dimensions.items(): target.column_dimensions[col].width = dim.width
-                output_final = io.BytesIO(); wb_final.save(output_final); return output_final.getvalue()
-        except: pass
+                                    new_cell.font = copy(cell.font)
+                                    new_cell.border = copy(cell.border)
+                                    new_cell.fill = copy(cell.fill)
+                                    new_cell.number_format = copy(cell.number_format)
+                                    new_cell.alignment = copy(cell.alignment)
+                output_ret = io.BytesIO()
+                wb_final.save(output_ret)
+                return output_ret.getvalue()
+        except Exception as e:
+            st.warning(f"Aviso: Erro ao mesclar modelo RET: {e}")
+    
     return output.getvalue()
