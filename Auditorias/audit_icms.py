@@ -4,7 +4,7 @@ import streamlit as st
 import re
 
 def normalizar_ncm_final(ncm):
-    """Garante match absoluto de 8 dígitos para evitar erros de formatação do Excel."""
+    """Garante match absoluto de 8 dígitos, limpando qualquer formatação residual."""
     if pd.isna(ncm) or ncm == "": return "00000000"
     limpo = re.sub(r'\D', '', str(ncm))
     if '.' in str(ncm):
@@ -12,15 +12,15 @@ def normalizar_ncm_final(ncm):
     return limpo.zfill(8)
 
 def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
-    # Preserva a ordem original das colunas (TAGS XML)
     colunas_xml_originais = list(df_saidas.columns)
     df_i = df_saidas.copy()
 
-    # --- 1. CARREGAMENTO DO GABARITO ---
+    # --- 1. CARREGAMENTO DO GABARITO (FORÇANDO TEXTO) ---
     caminho_base = os.path.join("Bases_Tributárias", f"{cod_cliente}-Bases_Tributarias.xlsx")
     base_gabarito = pd.DataFrame()
     if os.path.exists(caminho_base):
         try:
+            # Lemos como string para respeitar seu formato texto
             base_gabarito = pd.read_excel(caminho_base, dtype=str)
             base_gabarito.columns = [str(c).strip().upper() for c in base_gabarito.columns]
             
@@ -76,7 +76,7 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
                         alq_esp = float(g[col_inter[0]])
                     else:
                         alq_esp = float(g[col_alq[0]])
-                    fundamentacao = f"Alíquota de {alq_esp}% definida pelo Gabarito Tributário (NCM {ncm_xml})."
+                    fundamentacao = f"Parâmetros definidos pelo Gabarito para NCM {ncm_xml}."
 
                 col_cst = [c for c in base_gabarito.columns if 'CST' in c]
                 if col_cst:
@@ -86,7 +86,7 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
                     else:
                         cst_esp = novo_cst
 
-        # PASSO 4: LÓGICA INTERESTADUAL PADRÃO
+        # PASSO 4: LÓGICA INTERESTADUAL PADRÃO (SE NÃO HOUVER GABARITO)
         elif uf_orig != uf_dest and cst_esp not in ['60', '10']:
             if str(r.get('ORIGEM', '0')) in ['1', '2', '3', '8']: alq_esp = 4.0
             else:
@@ -109,20 +109,13 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
         
         return pd.Series([cst_esp, alq_esp, diag_cst, diag_alq, status_base, vlr_comp_final, fundamentacao])
 
-    # --- EXECUÇÃO ---
-    # Nomes das colunas de análise
+    # --- MONTAGEM DAS COLUNAS ---
     analises_nomes = ['CST_ESPERADA', 'ALQ_ESPERADA', 'DIAG_CST', 'DIAG_ALQUOTA', 'STATUS_BASE', 'ICMS_COMPLEMENTAR', 'FUNDAMENTAÇÃO']
-    
-    # Aplica a auditoria
     df_analise = df_i.apply(audit_icms_linha, axis=1)
     df_analise.columns = analises_nomes
     
-    # CONCATENAÇÃO FINAL NA ORDEM EXATA: TAGS XML -> SITUAÇÃO NOTA -> ANALISES
-    # Identificamos as colunas de autenticidade (Situação Nota) separadamente
     cols_xml = [c for c in colunas_xml_originais if c != 'Situação Nota']
-    cols_autenticidade = ['Situação Nota'] if 'Situação Nota' in colunas_xml_originais else []
+    cols_aut = ['Situação Nota'] if 'Situação Nota' in colunas_xml_originais else []
     
-    df_final = pd.concat([df_i[cols_xml], df_i[cols_autenticidade], df_analise], axis=1)
-    
-    # Grava no Excel
+    df_final = pd.concat([df_i[cols_xml], df_i[cols_aut], df_analise], axis=1)
     df_final.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
