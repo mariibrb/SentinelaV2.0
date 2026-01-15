@@ -39,6 +39,12 @@ def buscar_tag_recursiva(tag_alvo, no):
             return elemento.text if elemento.text else ""
     return ""
 
+def limpar_ncm_universal(ncm):
+    """Garante que o NCM seja string de 8 dígitos, independente de como veio do Excel/XML."""
+    if pd.isna(ncm) or ncm == "": return "00000000"
+    ncm_limpo = re.sub(r'\D', '', str(ncm))
+    return ncm_limpo.zfill(8)
+
 # --- MOTOR DE PROCESSAMENTO XML ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
@@ -70,10 +76,6 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             pis_no = det.find('.//PIS')
             cof_no = det.find('.//COFINS')
 
-            # TRATAMENTO RIGOROSO DO NCM DO XML (Remove pontos e garante 8 dígitos com zero à esquerda)
-            ncm_bruto = buscar_tag_recursiva('NCM', prod)
-            ncm_limpo = re.sub(r'\D', '', str(ncm_bruto)).zfill(8)
-
             linha = {
                 "TIPO_SISTEMA": tipo_operacao,
                 "CHAVE_ACESSO": str(chave).strip(),
@@ -83,7 +85,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "UF_EMIT": buscar_tag_recursiva('UF', emit),
                 "UF_DEST": buscar_tag_recursiva('UF', dest),
                 "CFOP": buscar_tag_recursiva('CFOP', prod),
-                "NCM": ncm_limpo,
+                "NCM": limpar_ncm_universal(buscar_tag_recursiva('NCM', prod)),
                 "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
                 "ORIGEM": buscar_tag_recursiva('orig', icms_no),
                 "CST-ICMS": buscar_tag_recursiva('CST', icms_no) or buscar_tag_recursiva('CSOSN', icms_no),
@@ -154,7 +156,13 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
             df_fmt = pd.DataFrame(columns=[c.upper() for c in colunas_alvo])
             for col in colunas_alvo:
                 c_up = col.upper()
-                df_fmt[c_up] = df[c_up] if c_up in df.columns else "0"
+                if c_up in df.columns:
+                    if 'NCM' in c_up:
+                        df_fmt[c_up] = df[c_up].apply(limpar_ncm_universal)
+                    else:
+                        df_fmt[c_up] = df[c_up]
+                else:
+                    df_fmt[c_up] = "0"
             
             for col in df_fmt.columns:
                 if any(k in col for k in ['VLR', 'BC', 'VAL', 'QTDE', 'ICMS', 'PIS', 'COF', 'IPI']):
