@@ -3,66 +3,50 @@ import streamlit as st
 def aplicar_estilo_sentinela():
     st.markdown("""
     <style>
-        /* Importando fontes e limpando padrões */
         header {visibility: hidden !important;}
         footer {visibility: hidden !important;}
-        .stApp { background-color: #E6D8C8; } /* Fundo creme sofisticado igual à imagem */
+        .stApp { background-color: #F0F2F6; }
 
-        /* SIDEBAR PREMIUM */
+        /* SIDEBAR BRANCA COM BORDA LARANJA */
         [data-testid="stSidebar"] {
-            background-color: #E6D8C8 !important;
-            border-right: 1px solid rgba(0,0,0,0.1);
+            background-color: #FFFFFF !important;
+            border-right: 3px solid #FF6F00;
         }
 
-        /* O BOTÃO ESTILO GARIMPEIRO (Dourado Metálico e Redondo) */
+        /* BOTÃO PÍLULA (SIDEBAR E CORPO) */
         div.stDownloadButton > button, 
         div.stButton > button {
-            background: linear-gradient(180deg, #E8C866 0%, #B39233 100%) !important;
-            color: #1A1A1A !important;
-            border: 1px solid #8A6D1B !important;
-            border-radius: 50px !important; /* Totalmente pílula */
-            padding: 0.7rem 2rem !important;
+            background: linear-gradient(135deg, #FF6F00 0%, #FF9100 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 50px !important;
+            padding: 0.7rem 1.5rem !important;
             font-weight: 700 !important;
-            font-size: 16px !important;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.4) !important;
-            transition: all 0.2s ease-in-out !important;
+            box-shadow: 0 4px 15px rgba(255, 111, 0, 0.3) !important;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
             width: 100% !important;
         }
 
         div.stDownloadButton > button:hover, 
         div.stButton > button:hover {
-            transform: scale(1.02) !important;
-            box-shadow: 0 6px 12px rgba(0,0,0,0.3) !important;
-            filter: brightness(1.1);
+            transform: translateY(-3px) !important;
+            box-shadow: 0 8px 20px rgba(255, 111, 0, 0.4) !important;
         }
 
-        /* INPUTS E CAMPOS (Estilo da imagem) */
-        .stTextInput > div > div > input {
-            border-radius: 15px !important;
-            border: 2px solid #FFFFFF !important;
-            padding: 10px !important;
-            font-weight: 800 !important;
-            color: #1A1A1A !important;
+        /* TEXTOS E CONTAINERS */
+        .titulo-principal { color: #FF6F00; font-weight: 800; font-size: 2.2rem; }
+        .barra-laranja {
+            height: 2px;
+            background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
+            margin-bottom: 25px;
         }
-
-        /* TÍTULOS E SUBTÍTULOS */
-        .titulo-sentinela {
-            color: #332211;
-            font-weight: 800;
-            font-size: 2rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .label-custom {
-            color: #332211;
-            font-weight: 700;
-            text-transform: uppercase;
-            font-size: 0.9rem;
-            margin-bottom: 5px;
+        .status-container {
+            padding: 15px;
+            border-left: 5px solid #FF6F00;
+            background-color: #FFFFFF;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
         }
     </style>
     """, unsafe_allow_html=True)
