@@ -81,7 +81,7 @@ if selecao:
     c1_stat, c2_stat = st.columns(2)
     path_base = f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"
     if verificar_arquivo_github(path_base):
-        with c1_stat: st.success("✅ Base de Impostos Conectada")
+        with c1_stat: st.success("✅ Base de Impostos Localizada")
     else:
         with c1_stat: st.warning("⚠️ Base de Impostos não localizada")
     
