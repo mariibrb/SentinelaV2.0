@@ -186,7 +186,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # --- CHAMADA DOS ESPECIALISTAS COM DF_XE PARA CRUZAMENTO ---
             processar_icms(df_xs, writer, cod_cliente, df_xe)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
