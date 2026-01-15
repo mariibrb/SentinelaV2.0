@@ -70,6 +70,10 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             pis_no = det.find('.//PIS')
             cof_no = det.find('.//COFINS')
 
+            # TRATAMENTO RIGOROSO DO NCM DO XML (Remove pontos e garante 8 dígitos com zero à esquerda)
+            ncm_bruto = buscar_tag_recursiva('NCM', prod)
+            ncm_limpo = re.sub(r'\D', '', str(ncm_bruto)).zfill(8)
+
             linha = {
                 "TIPO_SISTEMA": tipo_operacao,
                 "CHAVE_ACESSO": str(chave).strip(),
@@ -79,7 +83,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "UF_EMIT": buscar_tag_recursiva('UF', emit),
                 "UF_DEST": buscar_tag_recursiva('UF', dest),
                 "CFOP": buscar_tag_recursiva('CFOP', prod),
-                "NCM": re.sub(r'\D', '', buscar_tag_recursiva('NCM', prod)).zfill(8),
+                "NCM": ncm_limpo,
                 "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
                 "ORIGEM": buscar_tag_recursiva('orig', icms_no),
                 "CST-ICMS": buscar_tag_recursiva('CST', icms_no) or buscar_tag_recursiva('CSOSN', icms_no),
