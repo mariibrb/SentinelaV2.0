@@ -90,7 +90,7 @@ if selecao:
         if verificar_arquivo_github(path_ret):
             with c2_stat: st.success("✅ Base RET Localizada")
         else:
-            with c2_stat: st.warning("⚠️ Modelo RET não encontrado")
+            with c2_stat: st.warning("⚠️ Base RET não localizada")
 
     # --- CENTRAL DE ARQUIVOS COM NOMES COMPLETOS ---
     st.markdown("### 📥 Passo 3: Central de Arquivos")
