@@ -39,11 +39,15 @@ def buscar_tag_recursiva(tag_alvo, no):
             return elemento.text if elemento.text else ""
     return ""
 
-def limpar_ncm_universal(ncm):
-    """Garante que o NCM seja string de 8 dígitos, independente de como veio do Excel/XML."""
+def normalizar_ncm_absoluto(ncm):
+    """Força o NCM a ser uma string de 8 dígitos, limpando qualquer formatação de número do Excel."""
     if pd.isna(ncm) or ncm == "": return "00000000"
-    ncm_limpo = re.sub(r'\D', '', str(ncm))
-    return ncm_limpo.zfill(8)
+    # Remove pontos, espaços, traços e letras
+    limpo = re.sub(r'\D', '', str(ncm))
+    # Se vier algo como '2071210.0' do Excel, removemos o decimal
+    if '.' in str(ncm):
+        limpo = re.sub(r'\D', '', str(ncm).split('.')[0])
+    return limpo.zfill(8)
 
 # --- MOTOR DE PROCESSAMENTO XML ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
@@ -85,7 +89,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "UF_EMIT": buscar_tag_recursiva('UF', emit),
                 "UF_DEST": buscar_tag_recursiva('UF', dest),
                 "CFOP": buscar_tag_recursiva('CFOP', prod),
-                "NCM": limpar_ncm_universal(buscar_tag_recursiva('NCM', prod)),
+                "NCM": normalizar_ncm_absoluto(buscar_tag_recursiva('NCM', prod)),
                 "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
                 "ORIGEM": buscar_tag_recursiva('orig', icms_no),
                 "CST-ICMS": buscar_tag_recursiva('CST', icms_no) or buscar_tag_recursiva('CSOSN', icms_no),
@@ -158,7 +162,7 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
                 c_up = col.upper()
                 if c_up in df.columns:
                     if 'NCM' in c_up:
-                        df_fmt[c_up] = df[c_up].apply(limpar_ncm_universal)
+                        df_fmt[c_up] = df[c_up].apply(normalizar_ncm_absoluto)
                     else:
                         df_fmt[c_up] = df[c_up]
                 else:
