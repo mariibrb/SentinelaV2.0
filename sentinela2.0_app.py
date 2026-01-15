@@ -101,12 +101,12 @@ if selecao:
         xmls = st.file_uploader("Upload de XMLs ou ZIP", type=['zip', 'xml'], accept_multiple_files=True, key="xml_up")
 
     with c2:
-        st.markdown("**📥 Entradas (Gerenciais)**")
+        st.markdown("**📥 Entradas **")
         ge = st.file_uploader("Gerencial Entradas (TXT/CSV)", type=['csv', 'xlsx', 'txt'], accept_multiple_files=True, key="ge")
         ae = st.file_uploader("Autenticidade Entradas (Excel)", type=['xlsx', 'csv'], accept_multiple_files=True, key="ae")
 
     with c3:
-        st.markdown("**📤 Saídas (Gerenciais)**")
+        st.markdown("**📤 Saídas **")
         gs = st.file_uploader("Gerencial Saídas (TXT/CSV)", type=['csv', 'xlsx', 'txt'], accept_multiple_files=True, key="gs")
         as_f = st.file_uploader("Autenticidade Saídas (Excel)", type=['xlsx', 'csv'], accept_multiple_files=True, key="as")
 
