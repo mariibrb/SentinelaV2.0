@@ -12,6 +12,8 @@ def normalizar_ncm_final(ncm):
     return limpo.zfill(8)
 
 def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
+    # Preserva a ordem original das colunas (TAGS XML)
+    colunas_xml_originais = list(df_saidas.columns)
     df_i = df_saidas.copy()
 
     # --- 1. CARREGAMENTO DO GABARITO ---
@@ -19,12 +21,9 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
     base_gabarito = pd.DataFrame()
     if os.path.exists(caminho_base):
         try:
-            # Lemos a base inteira como string
             base_gabarito = pd.read_excel(caminho_base, dtype=str)
-            # CORREÇÃO: Transformamos as colunas em lista antes de aplicar o upper()
             base_gabarito.columns = [str(c).strip().upper() for c in base_gabarito.columns]
             
-            # Localiza coluna de NCM e aplica normalização rigorosa
             col_ncm_gab = [c for c in base_gabarito.columns if 'NCM' in c]
             if col_ncm_gab:
                 base_gabarito['NCM_KEY'] = base_gabarito[col_ncm_gab[0]].apply(normalizar_ncm_final)
@@ -70,7 +69,6 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
             if ncm_xml in base_gabarito['NCM_KEY'].values:
                 g = base_gabarito[base_gabarito['NCM_KEY'] == ncm_xml].iloc[0]
                 
-                # Procura colunas de Alíquota
                 col_alq = [c for c in base_gabarito.columns if 'ALQ' in c]
                 if col_alq:
                     col_inter = [c for c in col_alq if 'INTER' in c]
@@ -80,7 +78,6 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
                         alq_esp = float(g[col_alq[0]])
                     fundamentacao = f"Alíquota de {alq_esp}% definida pelo Gabarito Tributário (NCM {ncm_xml})."
 
-                # Procura colunas de CST
                 col_cst = [c for c in base_gabarito.columns if 'CST' in c]
                 if col_cst:
                     novo_cst = str(g[col_cst[0]]).strip().split('.')[0].zfill(2)
@@ -113,12 +110,19 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
         return pd.Series([cst_esp, alq_esp, diag_cst, diag_alq, status_base, vlr_comp_final, fundamentacao])
 
     # --- EXECUÇÃO ---
-    analises = ['CST_ESPERADA', 'ALQ_ESPERADA', 'DIAG_CST', 'DIAG_ALQUOTA', 'STATUS_BASE', 'ICMS_COMPLEMENTAR', 'FUNDAMENTAÇÃO']
-    df_i[analises] = df_i.apply(audit_icms_linha, axis=1)
-
-    prioridade = ['NUM_NF', 'CFOP', 'NCM', 'VPROD', 'CST-ICMS', 'CST_ESPERADA', 'DIAG_CST', 'ALQ-ICMS', 'ALQ_ESPERADA', 'DIAG_ALQUOTA', 'Situação Nota']
-    analises_cols = list(analises)
-    outras_cols = [c for c in df_i.columns if c not in analises_cols and c not in prioridade]
+    # Nomes das colunas de análise
+    analises_nomes = ['CST_ESPERADA', 'ALQ_ESPERADA', 'DIAG_CST', 'DIAG_ALQUOTA', 'STATUS_BASE', 'ICMS_COMPLEMENTAR', 'FUNDAMENTAÇÃO']
     
-    df_final = df_i[prioridade + outras_cols + analises_cols]
+    # Aplica a auditoria
+    df_analise = df_i.apply(audit_icms_linha, axis=1)
+    df_analise.columns = analises_nomes
+    
+    # CONCATENAÇÃO FINAL NA ORDEM EXATA: TAGS XML -> SITUAÇÃO NOTA -> ANALISES
+    # Identificamos as colunas de autenticidade (Situação Nota) separadamente
+    cols_xml = [c for c in colunas_xml_originais if c != 'Situação Nota']
+    cols_autenticidade = ['Situação Nota'] if 'Situação Nota' in colunas_xml_originais else []
+    
+    df_final = pd.concat([df_i[cols_xml], df_i[cols_autenticidade], df_analise], axis=1)
+    
+    # Grava no Excel
     df_final.to_excel(writer, sheet_name='ICMS_AUDIT', index=False)
