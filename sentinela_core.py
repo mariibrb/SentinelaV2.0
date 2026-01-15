@@ -20,7 +20,7 @@ try:
 except ImportError as e:
     st.error(f"⚠️ Erro de Dependência: Verifique as pastas Auditorias e Apuracoes. Detalhe: {e}")
 
-# --- UTILITÁRIOS DE TRATAMENTO ---
+# --- UTILITÁRIOS DE TRATAMENTO DE DADOS ---
 def safe_float(v):
     if v is None or pd.isna(v): return 0.0
     txt = str(v).strip().upper()
@@ -40,11 +40,11 @@ def buscar_tag_recursiva(tag_alvo, no):
     return ""
 
 def tratar_ncm_texto(ncm):
-    """Garante que o NCM seja lido como texto puro e limpo."""
+    """Preserva o formato texto do NCM conforme definido pelo usuário."""
     if pd.isna(ncm) or ncm == "": return ""
     return re.sub(r'\D', '', str(ncm)).strip()
 
-# --- MOTOR DE PROCESSAMENTO XML ---
+# --- MOTOR DE PROCESSAMENTO XML (ESTRUTURA COMPLETA) ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
         xml_str = content.decode('utf-8', errors='replace')
@@ -111,6 +111,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     except Exception as e:
         print(f"Erro item XML: {e}")
 
+# --- TRATAMENTO DE ZIP E RECURSIVIDADE ---
 def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
     dados_lista = []
     if not files: return pd.DataFrame(), pd.DataFrame()
@@ -137,6 +138,7 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
     if df_total.empty: return pd.DataFrame(), pd.DataFrame()
     return df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy(), df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
 
+# --- LEITOR DE ARQUIVOS GERENCIAIS ---
 def ler_gerencial_robusto(arquivos, colunas_alvo):
     if not arquivos: return pd.DataFrame(columns=colunas_alvo)
     lista = arquivos if isinstance(arquivos, list) else [arquivos]
@@ -157,10 +159,7 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
             for col in colunas_alvo:
                 c_up = col.upper()
                 if c_up in df.columns:
-                    if 'NCM' in c_up:
-                        df_fmt[c_up] = df[c_up].apply(tratar_ncm_texto)
-                    else:
-                        df_fmt[c_up] = df[c_up]
+                    df_fmt[c_up] = df[c_up]
                 else:
                     df_fmt[c_up] = "0"
             
@@ -173,6 +172,7 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
             
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=colunas_alvo)
 
+# --- GERAÇÃO DO EXCEL FINAL (ORDEM RÍGIDA) ---
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
@@ -185,6 +185,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except: pass
         
+        # Gravação obrigatória das abas gerenciais
         df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
@@ -208,23 +209,4 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
 
-    if is_ret:
-        try:
-            caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
-            if os.path.exists(caminho_modelo):
-                output.seek(0)
-                wb_final = openpyxl.load_workbook(output)
-                wb_modelo = openpyxl.load_workbook(caminho_modelo, data_only=False)
-                for sheet_name in wb_modelo.sheetnames:
-                    if sheet_name not in wb_final.sheetnames:
-                        source = wb_modelo[sheet_name]; target = wb_final.create_sheet(sheet_name)
-                        for row in source.iter_rows():
-                            for cell in row:
-                                new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
-                                if cell.has_style:
-                                    new_cell.font, new_cell.border, new_cell.fill, new_cell.number_format, new_cell.alignment = copy(cell.font), copy(cell.border), copy(cell.fill), copy(cell.number_format), copy(cell.alignment)
-                output_ret = io.BytesIO()
-                wb_final.save(output_ret)
-                return output_ret.getvalue()
-        except: pass
     return output.getvalue()
