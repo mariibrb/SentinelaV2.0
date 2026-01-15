@@ -1,6 +1,7 @@
 import pandas as pd
 
-# Tabela de Alíquotas Internas (Base 2025/2026)
+# Tabela de Alíquotas Internas Atualizada (Base 2025/2026)
+# Importante: Muitos estados subiram para 19% e 20% recentemente
 ALIQUOTAS_INTERNAS = {
     'AC': 19.0, 'AL': 19.0, 'AM': 20.0, 'AP': 18.0, 'BA': 20.5, 'CE': 20.0, 'DF': 20.0, 'ES': 17.0,
     'GO': 19.0, 'MA': 22.0, 'MG': 18.0, 'MS': 17.0, 'MT': 17.0, 'PA': 19.0, 'PB': 20.0, 'PE': 20.5,
@@ -12,56 +13,66 @@ def processar_difal(df, writer):
     df_d = df.copy()
 
     def audit_difal_detalhada(r):
-        # --- Dados do XML ---
-        uf_orig = str(r.get('UF_EMIT', ''))
-        uf_dest = str(r.get('UF_DEST', ''))
-        ind_ie = str(r.get('indIEDest', '9')) # 9 = Não Contribuinte
+        # --- Dados do XML (Conectando com as chaves do Core) ---
+        uf_orig = str(r.get('UF_EMIT', '')).strip()
+        uf_dest = str(r.get('UF_DEST', '')).strip()
         bc_icms = float(r.get('BC-ICMS', 0.0))
-        vlr_difal_xml = float(r.get('VAL-DIFAL', 0.0))
+        vlr_difal_xml = float(r.get('VAL-DIFAL', 0.0))    # Já inclui FCP Destino no Core
+        vlr_fcp_dest = float(r.get('VAL-FCP-DEST', 0.0))
         alq_inter_xml = float(r.get('ALQ-ICMS', 0.0))
         
-        # --- Regra de Aplicabilidade ---
-        # Só há DIFAL Consumidor Final se: Interestadual E Destinatário Não Contribuinte
-        obrigatorio = (uf_orig != uf_dest) and (ind_ie == '9')
+        # Identifica se é consumidor final (indIEDest != 1)
+        # O Core extrai isso se mapeado, senão assumimos pela UF_ORIG != UF_DEST
+        obrigatorio = (uf_orig != uf_dest)
 
         if not obrigatorio:
-            return pd.Series(["✅ N/A", "✅ OK", 0.0, "Nenhuma", "Operação interna ou com contribuinte."])
+            return pd.Series([0.0, 0.0, "✅ N/A", "✅ OK", 0.0, "Nenhuma", "Operação Interna."])
 
-        # --- Cálculos de Auditoria ---
+        # --- Cálculos de Auditoria (O Cérebro do DIFAL) ---
         alq_interna_dest = ALIQUOTAS_INTERNAS.get(uf_dest, 18.0)
-        p_difal = max(0.0, alq_interna_dest - alq_inter_xml)
-        vlr_difal_esperado = round(bc_icms * (p_difal / 100), 2)
         
-        # --- Diagnóstico de Destaque ---
-        if obrigatorio and vlr_difal_xml <= 0 and vlr_difal_esperado > 0:
+        # O DIFAL é a diferença entre a interna do destino e a interestadual da origem
+        p_difal_esperado = max(0.0, alq_interna_dest - alq_inter_xml)
+        
+        # Valor Esperado = BC * %DIFAL
+        vlr_difal_esperado = round(bc_icms * (p_difal_esperado / 100), 2)
+        
+        # --- DIAGNÓSTICOS ---
+        
+        # 1. Status de Destaque
+        status_destaque = "✅ OK"
+        if vlr_difal_xml <= 0 and vlr_difal_esperado > 0.01:
             status_destaque = "❌ Falta Destaque DIFAL"
-        else:
-            status_destaque = "✅ OK"
 
-        # --- Diagnóstico de Valor ---
+        # 2. Diagnóstico de Valor
         dif_centavos = abs(vlr_difal_xml - vlr_difal_esperado)
-        if dif_centavos < 0.10:
+        if dif_centavos < 0.11: # Tolerância para arredondamento de centavos
             diag_difal = "✅ OK"
             vlr_comp = 0.0
         else:
-            diag_difal = f"❌ Erro (XML: R$ {vlr_difal_xml} | Esp: R$ {vlr_difal_esperado})"
+            diag_difal = f"❌ Erro"
             vlr_comp = max(0.0, round(vlr_difal_esperado - vlr_difal_xml, 2))
 
-        # --- Ação Corretiva ---
+        # --- AÇÃO CORRETIVA ---
         acao = "Nenhuma"
-        if status_destaque == "❌ Falta Destaque DIFAL" or vlr_comp > 0:
-            acao = "Emitir NF Complementar / Guia"
-            motivo = f"A UF {uf_dest} exige DIFAL de {p_difal}% nesta operação."
-        elif vlr_difal_xml > vlr_difal_esperado:
-            acao = "Avaliar Restituição"
-            motivo = "Valor destacado no XML é superior ao cálculo legal."
-        else:
-            motivo = "DIFAL em conformidade."
+        motivo = f"DIFAL em conformidade para {uf_dest}."
 
-        return pd.Series([status_destaque, diag_difal, vlr_comp, acao, motivo])
+        if vlr_comp > 0:
+            acao = "Gerar Guia GNRE / NF Complementar"
+            motivo = f"Diferença de R$ {vlr_comp} para a UF {uf_dest}. Alíquota interna de {alq_interna_dest}%."
+        elif status_destaque == "❌ Falta Destaque DIFAL":
+            acao = "Emitir NF Complementar"
+            motivo = f"Operação interestadual para {uf_dest} exige destaque de DIFAL."
 
-    # Colunas de Análise pós AG
+        return pd.Series([
+            alq_interna_dest, p_difal_esperado, status_destaque, 
+            diag_difal, vlr_comp, acao, motivo
+        ])
+
+    # --- LISTA DE COLUNAS DE ANÁLISE ---
     analises = [
+        'DIFAL_ALQ_INTERNA_DEST',
+        'DIFAL_%_ESPERADO',
         'DIFAL_STATUS_DESTAQUE', 
         'DIFAL_DIAG_VALOR', 
         'DIFAL_VALOR_COMPLEMENTAR', 
@@ -69,10 +80,18 @@ def processar_difal(df, writer):
         'DIFAL_FUNDAMENTAÇÃO'
     ]
     
+    # Aplica a auditoria linha a linha
     df_d[analises] = df_d.apply(audit_difal_detalhada, axis=1)
 
-    # Reorganização Final
-    cols_xml = [c for c in df_d.columns if c not in analises and c != 'Situação Nota']
-    df_final = df_d[cols_xml + ['Situação Nota'] + analises]
+    # --- REORGANIZAÇÃO E FILTRAGEM ---
+    # No DIFAL, geralmente só queremos ver o que é Interestadual
+    df_final = df_d[df_d['UF_EMIT'] != df_d['UF_DEST']].copy()
 
-    df_final.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
+    # Prioridade de colunas
+    prioridade = ['NUM_NF', 'UF_EMIT', 'UF_DEST', 'BC-ICMS', 'ALQ-ICMS', 'VAL-DIFAL', 'VAL-FCP-DEST', 'Situação Nota']
+    outras_cols = [c for c in df_final.columns if c not in analises and c not in prioridade]
+    
+    df_export = df_final[prioridade + outras_cols + analises]
+
+    # Gravação no Excel
+    df_export.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
