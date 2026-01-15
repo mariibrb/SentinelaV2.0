@@ -7,7 +7,6 @@ def normalizar_ncm_final(ncm):
     """Garante match absoluto de 8 dígitos para evitar erros de formatação do Excel."""
     if pd.isna(ncm) or ncm == "": return "00000000"
     limpo = re.sub(r'\D', '', str(ncm))
-    # Remove decitmais se o Excel salvou como número float (ex: 2071210.0)
     if '.' in str(ncm):
         limpo = re.sub(r'\D', '', str(ncm).split('.')[0])
     return limpo.zfill(8)
@@ -22,9 +21,10 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
         try:
             # Lemos a base inteira como string
             base_gabarito = pd.read_excel(caminho_base, dtype=str)
-            base_gabarito.columns = base_gabarito.columns.str.strip().upper()
+            # CORREÇÃO: Transformamos as colunas em lista antes de aplicar o upper()
+            base_gabarito.columns = [str(c).strip().upper() for c in base_gabarito.columns]
             
-            # Localiza coluna de NCM e aplica normalização
+            # Localiza coluna de NCM e aplica normalização rigorosa
             col_ncm_gab = [c for c in base_gabarito.columns if 'NCM' in c]
             if col_ncm_gab:
                 base_gabarito['NCM_KEY'] = base_gabarito[col_ncm_gab[0]].apply(normalizar_ncm_final)
@@ -117,7 +117,7 @@ def processar_icms(df_saidas, writer, cod_cliente, df_entradas=pd.DataFrame()):
     df_i[analises] = df_i.apply(audit_icms_linha, axis=1)
 
     prioridade = ['NUM_NF', 'CFOP', 'NCM', 'VPROD', 'CST-ICMS', 'CST_ESPERADA', 'DIAG_CST', 'ALQ-ICMS', 'ALQ_ESPERADA', 'DIAG_ALQUOTA', 'Situação Nota']
-    analises_cols = [c for c in analises]
+    analises_cols = list(analises)
     outras_cols = [c for c in df_i.columns if c not in analises_cols and c not in prioridade]
     
     df_final = df_i[prioridade + outras_cols + analises_cols]
