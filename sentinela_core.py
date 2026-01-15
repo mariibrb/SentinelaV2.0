@@ -16,22 +16,11 @@ try:
     from Auditorias.audit_ipi import processar_ipi
     from Auditorias.audit_pis_cofins import processar_pc
     from Auditorias.audit_difal import processar_difal
-    try:
-        from Apuracoes.apuracao_difal import gerar_resumo_uf
-    except ImportError:
-        from Apuracoes.apuracao_difal import gerar_resumo_uf
+    from Apuracoes.apuracao_difal import gerar_resumo_uf
 except ImportError as e:
-    st.error(f"Erro Crítico de Dependência no Core: {e}")
-    # Fallbacks para evitar crash total se um módulo falhar
-    if 'gerar_aba_resumo' not in locals(): def gerar_aba_resumo(*args): pass
-    if 'processar_icms' not in locals(): def processar_icms(*args): pass
-    if 'processar_ipi' not in locals(): def processar_ipi(*args): pass
-    if 'processar_pc' not in locals(): def processar_pc(*args): pass
-    if 'processar_difal' not in locals(): def processar_difal(*args): pass
-    if 'gerar_resumo_uf' not in locals(): def gerar_resumo_uf(*args): pass
+    st.error(f"Erro de Dependência no Motor: {e}")
 
-# --- UTILITÁRIOS DE CONVERSÃO ---
-
+# --- UTILITÁRIOS ---
 def safe_float(v):
     if v is None or pd.isna(v): return 0.0
     txt = str(v).strip().upper()
@@ -43,8 +32,6 @@ def safe_float(v):
         return round(float(txt), 4)
     except: return 0.0
 
-# --- MOTOR DE PROCESSAMENTO XML ---
-
 def buscar_tag_recursiva(tag_alvo, no):
     if no is None: return ""
     for elemento in no.iter():
@@ -52,6 +39,7 @@ def buscar_tag_recursiva(tag_alvo, no):
             return elemento.text if elemento.text else ""
     return ""
 
+# --- MOTOR DE PROCESSAMENTO XML ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
         xml_str = content.decode('utf-8', errors='replace')
@@ -62,16 +50,14 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
         if inf is None: return 
         
         ide = root.find('.//ide')
-        tp_nf = buscar_tag_recursiva('tpNF', ide) # 0=Entrada, 1=Saída
+        tp_nf = buscar_tag_recursiva('tpNF', ide)
         emit = root.find('.//emit')
         dest = root.find('.//dest')
         
         cnpj_emit = re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', emit))
         cnpj_alvo = re.sub(r'\D', '', str(cnpj_empresa_auditada))
         
-        # TRIAGEM AUTOMÁTICA
         tipo_operacao = "SAIDA" if (cnpj_emit == cnpj_alvo and tp_nf == '1') else "ENTRADA"
-
         chave = inf.attrib.get('Id', '')[3:]
         n_nf = buscar_tag_recursiva('nNF', ide)
 
@@ -89,7 +75,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "TIPO_SISTEMA": tipo_operacao,
                 "CHAVE_ACESSO": str(chave).strip(),
                 "NUM_NF": n_nf,
-                "CNPJ_EMIT": buscar_tag_recursiva('CNPJ', emit),
+                "CNPJ_EMIT": cnpj_emit,
                 "CNPJ_DEST": buscar_tag_recursiva('CNPJ', dest),
                 "UF_EMIT": buscar_tag_recursiva('UF', emit),
                 "UF_DEST": buscar_tag_recursiva('UF', dest),
@@ -137,7 +123,6 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
     return df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy(), df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
 
 # --- GERAÇÃO DO EXCEL FINAL ---
-
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
@@ -199,7 +184,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chamadas dos especialistas
             processar_icms(df_xs, writer, cod_cliente)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
@@ -207,10 +191,8 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
 
-    # --- LÓGICA DE CLONAGEM DO RET (OPENPYXL) ---
     if is_ret:
         try:
-            # Importante: No Streamlit Cloud, o arquivo de modelo precisa ser baixado ou estar no repo
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
             if os.path.exists(caminho_modelo):
                 output.seek(0)
@@ -224,15 +206,10 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                             for cell in row:
                                 new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
                                 if cell.has_style:
-                                    new_cell.font = copy(cell.font)
-                                    new_cell.border = copy(cell.border)
-                                    new_cell.fill = copy(cell.fill)
-                                    new_cell.number_format = copy(cell.number_format)
-                                    new_cell.alignment = copy(cell.alignment)
+                                    new_cell.font, new_cell.border, new_cell.fill, new_cell.number_format, new_cell.alignment = copy(cell.font), copy(cell.border), copy(cell.fill), copy(cell.number_format), copy(cell.alignment)
                 output_ret = io.BytesIO()
                 wb_final.save(output_ret)
                 return output_ret.getvalue()
-        except Exception as e:
-            st.warning(f"Aviso: Erro ao mesclar modelo RET: {e}")
-    
+        except: pass
+
     return output.getvalue()
