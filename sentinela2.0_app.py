@@ -58,7 +58,7 @@ st.markdown("<div class='titulo-principal'>SENTINELA | Análise Tributária</div
 col_a, col_b = st.columns([2, 1])
 
 with col_a:
-    st.markdown("### 👣 Passo 1: Seleção da Empresa")
+    st.markdown("### Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
         opcoes = [f"{l['CÓD']} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
         selecao = st.selectbox("Escolha a empresa para auditar", [""] + opcoes, label_visibility="collapsed")
@@ -71,7 +71,7 @@ if selecao:
     cnpj_auditado = str(dados_empresa['CNPJ']).strip()
 
     with col_b:
-        st.markdown("### ⚖️ Passo 2: Selecionar Regime")
+        st.markdown("### Passo 2: Selecionar Regime")
         regime = st.selectbox("Regime Fiscal", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
         is_ret = st.toggle("Habilitar MG (RET)")
 
