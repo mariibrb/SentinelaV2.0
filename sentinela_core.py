@@ -40,7 +40,7 @@ def buscar_tag_recursiva(tag_alvo, no):
     return ""
 
 def normalizar_ncm_absoluto(ncm):
-    """Força o NCM a ser uma string de 8 dígitos, tratando números vindos do Excel."""
+    """Normalização para garantir match independente da formatação original."""
     if pd.isna(ncm) or ncm == "": return "00000000"
     limpo = re.sub(r'\D', '', str(ncm))
     if '.' in str(ncm):
@@ -199,10 +199,8 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                     st_map.update(df_a.set_index(0)[5].to_dict())
                 except: pass
             
-            # Adiciona Situação Nota APÓS as tags extraídas do XML
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chama especialistas (As análises serão concatenadas ao final dentro de cada módulo)
             processar_icms(df_xs, writer, cod_cliente, df_xe)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
