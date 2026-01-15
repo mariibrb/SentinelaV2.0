@@ -4,118 +4,72 @@ import requests
 from sentinela_core import extrair_dados_xml_recursivo, gerar_excel_final
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Sentinela | Auditoria Fiscal", page_icon="🧡", layout="wide")
 
-# --- CSS NÍVEL "GARIMPEIRO" (FRONT-END AVANÇADO) ---
+# --- CSS: FOCO NO BOTÃO PREMIUM E SIDEBAR CLARO ---
 st.markdown("""
 <style>
-    /* Importando fonte moderna */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap');
-
     header {visibility: hidden !important;}
     footer {visibility: hidden !important;}
+    .stApp { background-color: #F0F2F6; }
     
-    .stApp { 
-        background-color: #F4F7F9; 
-        font-family: 'Inter', sans-serif;
-    }
-
-    /* SIDEBAR ESTILO DARK/SOFT */
-    [data-testid="stSidebar"] {
-        background-color: #1E1E2D !important; /* Escuro sofisticado */
-        border-right: None;
-        box-shadow: 10px 0 30px rgba(0,0,0,0.1);
+    /* SIDEBAR VOLTANDO AO BRANCO COM BORDA LARANJA */
+    [data-testid="stSidebar"] { 
+        background-color: #FFFFFF !important; 
+        border-right: 3px solid #FF6F00; 
     }
     
-    [data-testid="stSidebar"] * { color: #FFFFFF !important; }
-
-    /* O BOTÃO MAGNÉTICO (SIDEBAR) */
+    /* O BOTÃO ESTILIZADO (SIDEBAR) - ESTILO PÍLULA PREMIUM */
     div[data-testid="stSidebar"] .stDownloadButton button {
-        background: linear-gradient(135deg, #FF6F00 0%, #FF9100 100%) !important;
+        background: linear-gradient(145deg, #FF6F00, #FF8C00) !important;
         color: white !important;
         border: none !important;
-        border-radius: 12px !important;
-        padding: 0.8rem 1.5rem !important;
+        border-radius: 50px !important; /* Totalmente arredondado */
+        padding: 0.6rem 1.2rem !important;
         font-weight: 700 !important;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.3) !important;
-        transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1) !important;
+        font-size: 14px !important;
+        letter-spacing: 0.5px !important;
+        box-shadow: 4px 4px 10px rgba(255, 111, 0, 0.2), 
+                    inset -2px -2px 6px rgba(0,0,0,0.1) !important;
+        transition: all 0.3s ease !important;
         width: 100% !important;
-        position: relative;
-        overflow: hidden;
     }
 
     div[data-testid="stSidebar"] .stDownloadButton button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(255, 111, 0, 0.5) !important;
-        filter: brightness(1.1);
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 15px rgba(255, 111, 0, 0.4) !important;
+        filter: brightness(1.1) !important;
     }
 
-    div[data-testid="stSidebar"] .stDownloadButton button:active {
-        transform: translateY(1px);
+    /* TÍTULOS E ESTRUTURA ORIGINAL */
+    .titulo-container { text-align: left; padding-left: 10px; margin-bottom: 5px; }
+    .titulo-principal { color: #FF6F00; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 2.2rem; }
+    .titulo-sub { color: #888888; font-weight: 300; font-size: 1.5rem; }
+
+    .barra-laranja-fina {
+        height: 2px;
+        background: linear-gradient(to right, #FF6F00, #FF9100, transparent);
+        margin: 5px 0 20px 0;
+        width: 100%;
     }
 
-    /* TÍTULOS COM GRADIENTE */
-    .titulo-principal {
-        background: -webkit-linear-gradient(#FF6F00, #FF9100);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 800;
-        font-size: 2.5rem;
-        letter-spacing: -1px;
-    }
-
-    .titulo-sub { color: #A0AEC0; font-weight: 400; font-size: 1.2rem; }
-
-    .barra-laranja {
-        height: 4px;
-        background: linear-gradient(90deg, #FF6F00, transparent);
-        border-radius: 10px;
-        margin-bottom: 30px;
-        width: 100px;
-    }
-
-    /* CARDS DE UPLOAD (GLASSMORPHISM) */
-    section[data-testid="stFileUploadDropzone"] {
-        background: #FFFFFF !important;
-        border: 2px dashed #E2E8F0 !important;
-        border-radius: 20px !important;
-        padding: 2rem !important;
-        transition: 0.3s;
-    }
-
-    section[data-testid="stFileUploadDropzone"]:hover {
-        border-color: #FF6F00 !important;
-        background: #FFFBF7 !important;
-    }
-
-    /* BOTÃO DE ANÁLISE (BOTÃO DE AÇÃO) */
+    /* BOTÃO PRINCIPAL (INICIAR ANÁLISE) */
     .stButton > button {
-        background-color: #1E1E2D !important; /* Dark Mode Button */
+        background: linear-gradient(90deg, #FF6F00 0%, #FF9100 100%) !important;
         color: white !important;
         border-radius: 12px !important;
-        padding: 1rem !important;
-        font-weight: 700 !important;
+        font-weight: bold !important;
+        height: 3.5rem !important;
         border: none !important;
-        box-shadow: 0 10px 20px rgba(30, 30, 45, 0.2) !important;
-        transition: 0.3s;
+        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.15) !important;
     }
 
-    .stButton > button:hover {
-        background-color: #FF6F00 !important;
-        transform: translateY(-2px);
-        box-shadow: 0 10px 20px rgba(255, 111, 0, 0.3) !important;
-    }
-
-    /* CONTAINER DE STATUS */
     .status-container {
-        background: white;
-        padding: 20px;
-        border-radius: 15px;
+        padding: 12px;
         border-left: 5px solid #FF6F00;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        margin: 20px 0;
+        background-color: #E8EAEE;
+        border-radius: 5px;
+        margin: 15px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -147,7 +101,7 @@ def verificar_arquivo_github(caminho_relativo):
 
 df_clientes = carregar_base_clientes()
 
-# --- SIDEBAR DESIGN ---
+# --- SIDEBAR ---
 with st.sidebar:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
@@ -159,25 +113,23 @@ with st.sidebar:
             pd.DataFrame(columns=["NCM", "CST_ESPERADA", "ALQ_INTER", "CST_PC_ESPERADA", "CST_IPI_ESPERADA", "ALQ_IPI_ESPERADA"]).to_excel(writer, sheet_name='GABARITO', index=False)
         return output.getvalue()
     
-    # O botão que agora tem o estilo "Garimpeiro"
     st.download_button("📥 Modelo Bases Tributárias", criar_gabarito(), "gabarito.xlsx", use_container_width=True)
 
 # --- CONTEÚDO PRINCIPAL ---
-st.markdown("""
+st.markdown(f"""
 <div class='titulo-container'>
-    <div class='titulo-principal'>SENTINELA</div>
-    <div class='titulo-sub'>Inteligência e Auditoria Fiscal</div>
-    <div class='barra-laranja'></div>
+    <span class='titulo-principal'>SENTINELA</span> <span class='titulo-sub'>| Análise Tributária</span>
+    <div class='barra-laranja-fina'></div>
 </div>
 """, unsafe_allow_html=True)
 
-col_a, col_b = st.columns([2, 1], gap="large")
+col_a, col_b = st.columns([2, 1])
 
 with col_a:
-    st.markdown("### 🔍 01. Seleção")
+    st.markdown("### 👣 Passo 1: Seleção da Empresa")
     if not df_clientes.empty:
         opcoes = [f"{l['CÓD']} - {l['RAZÃO SOCIAL']}" for _, l in df_clientes.iterrows()]
-        selecao = st.selectbox("Escolha a empresa", [""] + opcoes, label_visibility="collapsed")
+        selecao = st.selectbox("Escolha", [""] + opcoes, label_visibility="collapsed")
     else: selecao = None
 
 if selecao:
@@ -186,30 +138,28 @@ if selecao:
     cnpj_auditado = dados_empresa['CNPJ']
 
     with col_b:
-        st.markdown("### ⚙️ 02. Parâmetros")
+        st.markdown("### ⚖️ Passo 2: Configuração")
         regime = st.selectbox("Regime", ["", "Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI"], label_visibility="collapsed")
         is_ret = st.toggle("Habilitar MG (RET)")
 
-    st.markdown(f"<div class='status-container'><b>Empresa:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='status-container'>📍 <b>Empresa selecionada:</b> {dados_empresa['RAZÃO SOCIAL']} | <b>CNPJ:</b> {cnpj_auditado}</div>", unsafe_allow_html=True)
     
-    # Validação GitHub
-    c_g1, c_g2 = st.columns(2)
-    with c_g1:
-        if verificar_arquivo_github(f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"):
-            st.success("✅ Bases Conectadas")
-        else: st.warning("⚠️ Bases Ausentes")
+    if verificar_arquivo_github(f"Bases_Tributárias/{cod_cliente}-Bases_Tributarias.xlsx"):
+        st.success(f"✅ **Base de Impostos localizada com sucesso!**")
+    else:
+        st.warning("⚠️ **Base de Impostos não encontrada.**")
     
-    with c_status2: # Corrigindo variável se necessário
-        if is_ret:
-            if verificar_arquivo_github(f"RET/{cod_cliente}-RET_MG.xlsx"):
-                st.success("✅ Modelo RET OK")
-            else: st.warning("⚠️ RET Ausente")
+    if is_ret:
+        if verificar_arquivo_github(f"RET/{cod_cliente}-RET_MG.xlsx"):
+            st.success(f"✅ **Modelo RET localizado com sucesso!**")
+        else:
+            st.warning(f"⚠️ **Modelo RET não encontrado.**")
 
-    st.markdown("<br>### 📥 03. Central de Arquivos", unsafe_allow_html=True)
+    st.markdown("### 📥 Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
     with c1:
-        st.markdown("#### 📄 Notas XML")
+        st.markdown("#### 📄 XML")
         xmls = st.file_uploader("X", type=['zip', 'xml'], accept_multiple_files=True, label_visibility="collapsed")
 
     with c2:
@@ -225,12 +175,12 @@ if selecao:
     st.markdown("<br>", unsafe_allow_html=True)
     _, col_btn, _ = st.columns([1, 1, 1])
     with col_btn:
-        if st.button("🚀 PROCESSAR AUDITORIA"):
+        if st.button("🚀 INICIAR ANÁLISE"):
             if xmls and regime:
-                with st.spinner("Analisando dados..."):
+                with st.spinner("Processando..."):
                     try:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
                         st.balloons()
-                        st.download_button("💾 BAIXAR RELATÓRIO", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
+                        st.download_button("💾 BAIXAR RELATÓRIO AGORA", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                     except Exception as e: st.error(f"Erro: {e}")
