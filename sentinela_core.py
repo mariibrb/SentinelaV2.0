@@ -40,11 +40,9 @@ def buscar_tag_recursiva(tag_alvo, no):
     return ""
 
 def normalizar_ncm_absoluto(ncm):
-    """Força o NCM a ser uma string de 8 dígitos, limpando qualquer formatação de número do Excel."""
+    """Garante que o NCM seja uma string de 8 dígitos, tratando números vindos do Excel."""
     if pd.isna(ncm) or ncm == "": return "00000000"
-    # Remove pontos, espaços, traços e letras
     limpo = re.sub(r'\D', '', str(ncm))
-    # Se vier algo como '2071210.0' do Excel, removemos o decimal
     if '.' in str(ncm):
         limpo = re.sub(r'\D', '', str(ncm).split('.')[0])
     return limpo.zfill(8)
