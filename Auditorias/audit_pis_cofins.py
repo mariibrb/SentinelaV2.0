@@ -9,39 +9,45 @@ def processar_pc(df, writer, cod_cliente=None, regime="Lucro Real"):
     base_gabarito = pd.DataFrame()
     if cod_cliente and os.path.exists(caminho_base):
         try:
-            base_gabarito = pd.read_excel(caminho_base)
-            base_gabarito['NCM'] = base_gabarito['NCM'].astype(str).str.strip().str.zfill(8)
+            # Lemos como string para garantir match do NCM (texto puro)
+            base_gabarito = pd.read_excel(caminho_base, dtype=str)
+            base_gabarito.columns = [str(c).strip().upper() for c in base_gabarito.columns]
+            if 'NCM' in base_gabarito.columns:
+                base_gabarito['NCM'] = base_gabarito['NCM'].str.replace(r'\D', '', regex=True).str.strip().str.zfill(8)
         except:
             pass
 
     def audit_pc_completa(r):
-        # --- Dados do XML (Conectando com as tags restauradas do Core) ---
-        ncm = str(r.get('NCM', '')).zfill(8)
-        cst_pis_xml = str(r.get('CST-PIS', '')).zfill(2)
-        cst_cof_xml = str(r.get('CST-COFINS', '')).zfill(2)
-        vlr_pis_xml = float(r.get('VLR-PIS', 0.0))    # Tag ajustada
-        vlr_cof_xml = float(r.get('VLR-COFINS', 0.0)) # Tag ajustada
+        # --- Dados do XML ---
+        ncm = str(r.get('NCM', '')).strip().zfill(8)
+        cst_pis_xml = str(r.get('CST-PIS', '')).strip().zfill(2)
+        cst_cof_xml = str(r.get('CST-COFINS', '')).strip().zfill(2)
+        vlr_pis_xml = float(r.get('VLR-PIS', 0.0))
+        vlr_cof_xml = float(r.get('VLR-COFINS', 0.0))
         vprod = float(r.get('VPROD', 0.0))
         
-        # --- DEFINIÇÃO DE ALÍQUOTA POR REGIME (O CÉREBRO) ---
+        # --- DEFINIÇÃO DE ALÍQUOTA POR REGIME ---
         if "Presumido" in str(regime):
             alq_pis_esp = 0.65
             alq_cof_esp = 3.0
             cst_pc_esp = "01"
-        else: # Lucro Real (Padrão)
+        else: # Lucro Real
             alq_pis_esp = 1.65
             alq_cof_esp = 7.6
             cst_pc_esp = "01"
         
-        # Sobrescreve com o Gabarito (Para Monofásicos, Alíquota Zero, etc.)
+        # SOBREPOSIÇÃO PELO GABARITO (Monofásicos, Alíquota Zero, etc.)
         if not base_gabarito.empty and ncm in base_gabarito['NCM'].values:
             g = base_gabarito[base_gabarito['NCM'] == ncm].iloc[0]
-            if 'CST_PC_ESPERADA' in base_gabarito.columns: 
-                cst_pc_esp = str(g['CST_PC_ESPERADA']).zfill(2)
-            if 'ALQ_PIS_ESPERADA' in base_gabarito.columns: 
-                alq_pis_esp = float(g['ALQ_PIS_ESPERADA'])
-            if 'ALQ_COF_ESPERADA' in base_gabarito.columns: 
-                alq_cof_esp = float(g['ALQ_COF_ESPERADA'])
+            
+            # Busca dinâmica de colunas no seu Excel
+            col_cst = [c for c in base_gabarito.columns if 'CST' in c and ('PC' in c or 'PIS' in c)]
+            col_pis = [c for c in base_gabarito.columns if 'ALQ' in c and 'PIS' in c]
+            col_cof = [c for c in base_gabarito.columns if 'ALQ' in c and 'COF' in c]
+
+            if col_cst: cst_pc_esp = str(g[col_cst[0]]).strip().split('.')[0].zfill(2)
+            if col_pis: alq_pis_esp = float(g[col_pis[0]])
+            if col_cof: alq_cof_esp = float(g[col_cof[0]])
 
         # --- CÁLCULOS DE CONFERÊNCIA ---
         vlr_pis_dev = round(vprod * (alq_pis_esp / 100), 2)
@@ -59,14 +65,14 @@ def processar_pc(df, writer, cod_cliente=None, regime="Lucro Real"):
 
         # --- AÇÃO CORRETIVA ---
         acao = "Nenhuma"
-        motivo = f"PIS/COFINS em conformidade para o regime {regime}."
+        motivo = f"PIS/COFINS em conformidade para {regime} e NCM {ncm}."
         
-        if comp_pis > 0 or comp_cof > 0:
-            acao = "Emitir NF Complementar / Guia de Ajuste"
-            motivo = f"Recolhimento a menor identificado no {regime}. PIS: R$ {comp_pis}, COFINS: R$ {comp_cof}."
+        if comp_pis > 0.01 or comp_cof > 0.01:
+            acao = "NF Complementar / Guia de Ajuste"
+            motivo = f"Recolhimento insuficiente no {regime}. Dif PIS: {comp_pis} | Dif COFINS: {comp_cof}."
         elif "❌" in diag_cst_pis or "❌" in diag_cst_cof:
             acao = "Registrar CC-e"
-            motivo = "Ajustar CST de PIS/COFINS para evitar rejeição em obrigações acessórias (EFD Contribuições)."
+            motivo = f"CST informado difere do esperado ({cst_pc_esp}) para este NCM."
 
         return pd.Series([
             cst_pc_esp, alq_pis_esp, alq_cof_esp,
@@ -75,26 +81,26 @@ def processar_pc(df, writer, cod_cliente=None, regime="Lucro Real"):
             acao, motivo
         ])
 
-    # --- MONTAGEM DAS COLUNAS DE ANÁLISE ---
-    analises = [
+    # --- LISTA DE COLUNAS DE ANÁLISE ---
+    analises_nomes = [
         'CST_PC_ESPERADA', 'ALQ_PIS_ESP', 'ALQ_COF_ESP',
         'PIS_DIAG_CST', 'PIS_DIAG_VALOR', 
         'COFINS_DIAG_CST', 'COFINS_DIAG_VALOR', 
         'AÇÃO_CORRETIVA_PC', 'FUNDAMENTAÇÃO_PC'
     ]
     
-    df_pc[analises] = df_pc.apply(audit_pc_completa, axis=1)
+    # Aplica a auditoria
+    df_pc[analises_nomes] = df_pc.apply(audit_pc_completa, axis=1)
     
-    # --- ORGANIZAÇÃO FINAL ---
-    # Priorizamos a visualização das tags do XML (incluindo as novas CBS e IBS)
-    prioridade = [
-        'NUM_NF', 'NCM', 'VPROD', 
-        'CST-PIS', 'VLR-PIS', 'CST-COFINS', 'VLR-COFINS', 
-        'VAL-CBS', 'VAL-IBS', 'Situação Nota'
-    ]
+    # --- REORGANIZAÇÃO RIGOROSA DAS COLUNAS ---
+    # 1. Separamos as Tags do XML (dados brutos extraídos pelo Core)
+    cols_originais = [c for c in df.columns if c != 'Situação Nota']
     
-    outras_cols = [c for c in df_pc.columns if c not in analises and c not in prioridade]
-    df_final = df_pc[prioridade + outras_cols + analises]
+    # 2. Separamos o Status de Autenticidade
+    cols_status = ['Situação Nota'] if 'Situação Nota' in df.columns else []
+    
+    # 3. Concatenamos na ordem: [XML] -> [STATUS] -> [ANÁLISES]
+    df_final = pd.concat([df_pc[cols_originais], df_pc[cols_status], df_pc[analises_nomes]], axis=1)
     
     # Gravação no Excel
     df_final.to_excel(writer, sheet_name='PIS_COFINS_AUDIT', index=False)
