@@ -10,20 +10,19 @@ ALIQUOTAS_INTERNAS = {
 }
 
 def processar_difal(df, writer):
+    # Trabalhamos em uma cópia para não sujar o DataFrame original
     df_d = df.copy()
 
     def audit_difal_detalhada(r):
         # --- Dados do XML (Conectando com as chaves do Core) ---
-        uf_orig = str(r.get('UF_EMIT', '')).strip()
-        uf_dest = str(r.get('UF_DEST', '')).strip()
+        uf_orig = str(r.get('UF_EMIT', '')).strip().upper()
+        uf_dest = str(r.get('UF_DEST', '')).strip().upper()
         bc_icms = float(r.get('BC-ICMS', 0.0))
-        vlr_difal_xml = float(r.get('VAL-DIFAL', 0.0))    # Já inclui FCP Destino no Core
-        vlr_fcp_dest = float(r.get('VAL-FCP-DEST', 0.0))
+        vlr_difal_xml = float(r.get('VAL-DIFAL', 0.0))  # Já inclui FCP Destino no Core
         alq_inter_xml = float(r.get('ALQ-ICMS', 0.0))
         
-        # Identifica se é consumidor final (indIEDest != 1)
-        # O Core extrai isso se mapeado, senão assumimos pela UF_ORIG != UF_DEST
-        obrigatorio = (uf_orig != uf_dest)
+        # Identifica se a operação é interestadual
+        obrigatorio = (uf_orig != uf_dest) and (uf_orig != "") and (uf_dest != "")
 
         if not obrigatorio:
             return pd.Series([0.0, 0.0, "✅ N/A", "✅ OK", 0.0, "Nenhuma", "Operação Interna."])
@@ -44,25 +43,25 @@ def processar_difal(df, writer):
         if vlr_difal_xml <= 0 and vlr_difal_esperado > 0.01:
             status_destaque = "❌ Falta Destaque DIFAL"
 
-        # 2. Diagnóstico de Valor
+        # 2. Diagnóstico de Valor (Tolerância de R$ 0,11 para centavos)
         dif_centavos = abs(vlr_difal_xml - vlr_difal_esperado)
-        if dif_centavos < 0.11: # Tolerância para arredondamento de centavos
+        if dif_centavos < 0.11:
             diag_difal = "✅ OK"
             vlr_comp = 0.0
         else:
-            diag_difal = f"❌ Erro"
+            diag_difal = "❌ Erro"
             vlr_comp = max(0.0, round(vlr_difal_esperado - vlr_difal_xml, 2))
 
         # --- AÇÃO CORRETIVA ---
         acao = "Nenhuma"
-        motivo = f"DIFAL em conformidade para {uf_dest}."
+        motivo = f"DIFAL em conformidade para destino {uf_dest}."
 
         if vlr_comp > 0:
             acao = "Gerar Guia GNRE / NF Complementar"
             motivo = f"Diferença de R$ {vlr_comp} para a UF {uf_dest}. Alíquota interna de {alq_interna_dest}%."
         elif status_destaque == "❌ Falta Destaque DIFAL":
             acao = "Emitir NF Complementar"
-            motivo = f"Operação interestadual para {uf_dest} exige destaque de DIFAL."
+            motivo = f"Operação interestadual para {uf_dest} exige destaque de DIFAL (Consumidor Final)."
 
         return pd.Series([
             alq_interna_dest, p_difal_esperado, status_destaque, 
@@ -70,7 +69,7 @@ def processar_difal(df, writer):
         ])
 
     # --- LISTA DE COLUNAS DE ANÁLISE ---
-    analises = [
+    analises_nomes = [
         'DIFAL_ALQ_INTERNA_DEST',
         'DIFAL_%_ESPERADO',
         'DIFAL_STATUS_DESTAQUE', 
@@ -81,17 +80,24 @@ def processar_difal(df, writer):
     ]
     
     # Aplica a auditoria linha a linha
-    df_d[analises] = df_d.apply(audit_difal_detalhada, axis=1)
+    df_d[analises_nomes] = df_d.apply(audit_difal_detalhada, axis=1)
 
-    # --- REORGANIZAÇÃO E FILTRAGEM ---
-    # No DIFAL, geralmente só queremos ver o que é Interestadual
+    # --- REORGANIZAÇÃO RIGOROSA DAS COLUNAS ---
+    # 1. Filtramos apenas o que é interestadual para a aba não ficar gigante com lixo
     df_final = df_d[df_d['UF_EMIT'] != df_d['UF_DEST']].copy()
-
-    # Prioridade de colunas
-    prioridade = ['NUM_NF', 'UF_EMIT', 'UF_DEST', 'BC-ICMS', 'ALQ-ICMS', 'VAL-DIFAL', 'VAL-FCP-DEST', 'Situação Nota']
-    outras_cols = [c for c in df_final.columns if c not in analises and c not in prioridade]
     
-    df_export = df_final[prioridade + outras_cols + analises]
+    if not df_final.empty:
+        # 2. Separamos as Tags do XML
+        cols_originais = [c for c in df_final.columns if c != 'Situação Nota' and c not in analises_nomes]
+        
+        # 3. Separamos o Status de Autenticidade
+        cols_status = ['Situação Nota'] if 'Situação Nota' in df_final.columns else []
+        
+        # 4. Concatenamos: [XML] -> [STATUS] -> [ANÁLISES]
+        df_export = pd.concat([df_final[cols_originais], df_final[cols_status], df_final[analises_nomes]], axis=1)
+    else:
+        # Se não houver interestadual, cria um DF vazio com as colunas para não dar erro
+        df_export = pd.DataFrame(columns=list(df.columns) + analises_nomes)
 
     # Gravação no Excel
     df_export.to_excel(writer, sheet_name='DIFAL_AUDIT', index=False)
