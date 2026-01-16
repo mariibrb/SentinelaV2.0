@@ -44,7 +44,7 @@ def tratar_ncm_texto(ncm):
     if pd.isna(ncm) or ncm == "": return ""
     return re.sub(r'\D', '', str(ncm)).strip()
 
-# --- MOTOR DE PROCESSAMENTO XML (ESTRUTURA COMPLETA) ---
+# --- MOTOR DE PROCESSAMENTO XML ---
 def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     try:
         xml_str = content.decode('utf-8', errors='replace')
@@ -70,10 +70,8 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
-            icms_no = det.find('.//ICMS')
-            ipi_no = det.find('.//IPI')
-            pis_no = det.find('.//PIS')
-            cof_no = det.find('.//COFINS')
+            icms_no = det.find('.//ICMS'); ipi_no = det.find('.//IPI')
+            pis_no = det.find('.//PIS'); cof_no = det.find('.//COFINS')
 
             linha = {
                 "TIPO_SISTEMA": tipo_operacao,
@@ -108,37 +106,28 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "VAL-FCP-DEST": safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
             }
             dados_lista.append(linha)
-    except Exception as e:
-        print(f"Erro item XML: {e}")
+    except: pass
 
-# --- TRATAMENTO DE ZIP E RECURSIVIDADE ---
 def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
     dados_lista = []
     if not files: return pd.DataFrame(), pd.DataFrame()
     lista_trabalho = files if isinstance(files, list) else [files]
-    
     def ler_zip(zip_data):
         with zipfile.ZipFile(zip_data) as z:
             for filename in z.namelist():
                 if filename.lower().endswith('.xml'):
-                    with z.open(filename) as f:
-                        processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
+                    with z.open(filename) as f: processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
                 elif filename.lower().endswith('.zip'):
-                    with z.open(filename) as nested_zip:
-                        ler_zip(io.BytesIO(nested_zip.read()))
-
+                    with z.open(filename) as nested_zip: ler_zip(io.BytesIO(nested_zip.read()))
     for f in lista_trabalho:
         f.seek(0)
-        if f.name.lower().endswith('.xml'):
-            processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
-        elif f.name.lower().endswith('.zip'):
-            ler_zip(f)
-            
+        if f.name.lower().endswith('.xml'): processar_conteudo_xml(f.read(), dados_lista, cnpj_empresa_auditada)
+        elif f.name.lower().endswith('.zip'): ler_zip(f)
     df_total = pd.DataFrame(dados_lista)
     if df_total.empty: return pd.DataFrame(), pd.DataFrame()
     return df_total[df_total['TIPO_SISTEMA'] == "ENTRADA"].copy(), df_total[df_total['TIPO_SISTEMA'] == "SAIDA"].copy()
 
-# --- LEITOR DE ARQUIVOS GERENCIAIS ---
+# --- LEITOR DE ARQUIVOS GERENCIAIS (FIXADO) ---
 def ler_gerencial_robusto(arquivos, colunas_alvo):
     if not arquivos: return pd.DataFrame(columns=colunas_alvo)
     lista = arquivos if isinstance(arquivos, list) else [arquivos]
@@ -167,17 +156,19 @@ def ler_gerencial_robusto(arquivos, colunas_alvo):
                 if any(k in col for k in ['VLR', 'BC', 'VAL', 'QTDE', 'ICMS', 'PIS', 'COF', 'IPI']):
                     df_fmt[col] = df_fmt[col].apply(safe_float)
             dfs.append(df_fmt)
-        except Exception as e:
-            st.warning(f"Aviso no arquivo {f.name}: {e}")
+        except: continue
             
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=colunas_alvo)
 
-# --- GERAÇÃO DO EXCEL FINAL (ORDEM RÍGIDA) ---
+# --- GERAÇÃO DO EXCEL FINAL ---
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
+    
+    # Layouts de Colunas Gerenciais
     cols_ent = ["NUM_NF","DATA_EMISSAO","CNPJ","UF","VLR_NF","AC","CFOP","COD_PROD","DESCR","NCM","UNID","VUNIT","QTDE","VPROD","DESC","FRETE","SEG","DESP","VC","CST-ICMS","BC-ICMS","VLR-ICMS","BC-ICMS-ST","ICMS-ST","VLR_IPI","CST_PIS","BC_PIS","VLR_PIS","CST_COF","BC_COF","VLR_COF"]
     cols_sai = ["NF","DATA_EMISSAO","CNPJ","Ufp","VC","AC","CFOP","COD_ITEM","DESC_ITEM","NCM","UND","VUNIT","QTDE","VITEM","DESC","FRETE","SEG","OUTRAS","VC_ITEM","CST","BC_ICMS","ALIQ_ICMS","ICMS","BC_ICMSST","ICMSST","IPI","CST_PIS","BC_PIS","PIS","CST_COF","BC_COF","COF"]
 
+    # Processamento dos Gerenciais
     df_ger_ent = ler_gerencial_robusto(ge, cols_ent)
     df_ger_sai = ler_gerencial_robusto(gs, cols_sai)
 
@@ -185,7 +176,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except: pass
         
-        # Gravação obrigatória das abas gerenciais
+        # Gravação das abas gerenciais com os dados carregados
         df_ger_ent.to_excel(writer, sheet_name='GERENCIAL_ENTRADAS', index=False)
         df_ger_sai.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
 
@@ -202,6 +193,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
+            # Chama Auditorias Especialistas
             processar_icms(df_xs, writer, cod_cliente, df_xe)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
