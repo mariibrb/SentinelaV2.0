@@ -92,7 +92,7 @@ if selecao:
         else:
             with c2_stat: st.warning("⚠️ Base RET não localizada")
 
-    # --- CENTRAL DE ARQUIVOS COM NOMES COMPLETOS ---
+    # --- CENTRAL DE ARQUIVOS ---
     st.markdown("### Passo 3: Central de Arquivos")
     c1, c2, c3 = st.columns(3)
     
@@ -119,7 +119,19 @@ if selecao:
                     try:
                         df_xe, df_xs = extrair_dados_xml_recursivo(xmls, cnpj_auditado)
                         relat = gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret)
-                        st.balloons()
+                        
+                        # SUBSTITUÍDO: Em vez de balões, um aviso de conformidade elegante
+                        st.markdown(f"""
+                            <div style="background-color: #ffffff; border-radius: 15px; padding: 25px; border-top: 5px solid #FF6F00; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; margin-top: 20px;">
+                                <div style="font-size: 3rem; margin-bottom: 10px;">📋</div>
+                                <h2 style="color: #FF6F00; margin: 0; font-weight: 800;">AUDITORIA CONCLUÍDA</h2>
+                                <p style="color: #555; font-size: 1.1rem; margin-top: 10px;">
+                                    Todos os cruzamentos entre XML e Gerencial foram validados para o regime <b>{regime}</b>.
+                                </p>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.markdown("<br>", unsafe_allow_html=True)
                         st.download_button("💾 BAIXAR RELATÓRIO FINAL", relat, f"Sentinela_{cod_cliente}.xlsx", use_container_width=True)
                     except Exception as e:
                         st.error(f"Erro no processamento: {e}")
