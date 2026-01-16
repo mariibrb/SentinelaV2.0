@@ -74,12 +74,19 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
         n_nf = buscar_tag_recursiva('nNF', ide)
         dt_emi = buscar_tag_recursiva('dhEmi', ide) or buscar_tag_recursiva('dEmi', ide)
 
+        # Indicador de IE do Destinatário para Auditoria de DIFAL (Consumidor Final)
+        ind_ie_dest = buscar_tag_recursiva('indIEDest', dest)
+
         for det in root.findall('.//det'):
             prod = det.find('prod'); imp = det.find('imposto')
             if prod is None or imp is None: continue
             
             icms_no = det.find('.//ICMS'); ipi_no = det.find('.//IPI')
             pis_no = det.find('.//PIS'); cof_no = det.find('.//COFINS')
+            
+            # Tags específicas de DIFAL e FCP
+            v_icms_uf_dest = safe_float(buscar_tag_recursiva('vICMSUFDest', imp))
+            v_fcp_uf_dest = safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
 
             linha = {
                 "TIPO_SISTEMA": tipo_operacao,
@@ -88,6 +95,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "DATA_EMISSAO": dt_emi,
                 "CNPJ_EMIT": cnpj_emit,
                 "CNPJ_DEST": re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', dest)),
+                "INDIEDEST": ind_ie_dest, # CRUCIAL para não acusar DIFAL em contribuinte
                 "UF_EMIT": buscar_tag_recursiva('UF', emit),
                 "UF_DEST": buscar_tag_recursiva('UF', dest),
                 "CFOP": buscar_tag_recursiva('CFOP', prod),
@@ -111,8 +119,8 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
                 "CST-COFINS": buscar_tag_recursiva('CST', cof_no),
                 "VLR-COFINS": safe_float(buscar_tag_recursiva('vCOFINS', cof_no)),
                 "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
-                "VAL-DIFAL": safe_float(buscar_tag_recursiva('vICMSUFDest', imp)) + safe_float(buscar_tag_recursiva('vFCPUFDest', imp)),
-                "VAL-FCP-DEST": safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
+                "VAL-DIFAL": v_icms_uf_dest + v_fcp_uf_dest,
+                "VAL-FCP-DEST": v_fcp_uf_dest
             }
             dados_lista.append(linha)
     except Exception as e:
@@ -155,7 +163,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
         try: gerar_aba_resumo(writer)
         except Exception as e: st.warning(f"Aviso ao gerar aba resumo: {e}")
         
-        # 2. Chamada das Gerenciais (Módulo Externo)
+        # 2. Chamada das Gerenciais
         try: gerar_abas_gerenciais(writer, ge, gs)
         except Exception as e: st.error(f"Erro no módulo de gerenciais: {e}")
 
@@ -175,6 +183,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
+            # Auditorias Especialistas
             processar_icms(df_xs, writer, cod_cliente, df_xe)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
