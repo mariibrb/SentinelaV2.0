@@ -9,7 +9,7 @@ from datetime import datetime
 import openpyxl
 from copy import copy
 
-# --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS ---
+# --- IMPORTAÇÃO DOS MÓDULOS ESPECIALISTAS (MANTIDOS ÍNTEGROS) ---
 try:
     from audit_resumo import gerar_aba_resumo
     from Auditorias.audit_icms import processar_icms
@@ -17,10 +17,9 @@ try:
     from Auditorias.audit_pis_cofins import processar_pc
     from Auditorias.audit_difal import processar_difal
     from Apuracoes.apuracao_difal import gerar_resumo_uf
-    # Módulo de Gerenciais mantido como solicitado
     from Gerenciais.audit_gerencial import gerar_abas_gerenciais
 except ImportError as e:
-    st.error(f"⚠️ Erro de Dependência: Verifique as pastas Auditorias, Apuracoes e Gerenciais. Detalhe: {e}")
+    st.error(f"⚠️ Erro Crítico de Dependência: Verifique se as pastas Auditorias, Apuracoes e Gerenciais estão no diretório. Detalhe: {e}")
 
 # --- UTILITÁRIOS DE TRATAMENTO DE DADOS E CONVERSÃO ---
 def safe_float(v):
@@ -46,7 +45,7 @@ def buscar_tag_recursiva(tag_alvo, no):
     return ""
 
 def tratar_ncm_texto(ncm):
-    """Preserva o formato texto do NCM conforme definido pelo usuário."""
+    """Normaliza o NCM como texto puro, preservando zeros à esquerda e removendo pontuação."""
     if pd.isna(ncm) or ncm == "": return ""
     return re.sub(r'\D', '', str(ncm)).strip()
 
@@ -55,7 +54,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
     """Realiza a leitura completa de cada item do XML, mapeando todas as tags tributárias."""
     try:
         xml_str = content.decode('utf-8', errors='replace')
-        xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
+        xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str) 
         root = ET.fromstring(xml_str)
         
         inf = root.find('.//infNFe')
@@ -70,6 +69,7 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
         tipo_nf = buscar_tag_recursiva('tpNF', ide)
         
         tipo_operacao = "SAIDA" if (cnpj_emit == cnpj_alvo and tipo_nf == '1') else "ENTRADA"
+        
         chave = inf.attrib.get('Id', '')[3:]
         n_nf = buscar_tag_recursiva('nNF', ide)
         dt_emi = buscar_tag_recursiva('dhEmi', ide) or buscar_tag_recursiva('dEmi', ide)
@@ -82,21 +82,35 @@ def processar_conteudo_xml(content, dados_lista, cnpj_empresa_auditada):
             pis_no = det.find('.//PIS'); cof_no = det.find('.//COFINS')
 
             linha = {
-                "TIPO_SISTEMA": tipo_operacao, "CHAVE_ACESSO": str(chave).strip(),
-                "NUM_NF": n_nf, "DATA_EMISSAO": dt_emi,
-                "CNPJ_EMIT": cnpj_emit, "CNPJ_DEST": re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', dest)),
-                "UF_EMIT": buscar_tag_recursiva('UF', emit), "UF_DEST": buscar_tag_recursiva('UF', dest),
-                "CFOP": buscar_tag_recursiva('CFOP', prod), "NCM": tratar_ncm_texto(buscar_tag_recursiva('NCM', prod)),
-                "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)), "ORIGEM": buscar_tag_recursiva('orig', icms_no),
+                "TIPO_SISTEMA": tipo_operacao,
+                "CHAVE_ACESSO": str(chave).strip(),
+                "NUM_NF": n_nf,
+                "DATA_EMISSAO": dt_emi,
+                "CNPJ_EMIT": cnpj_emit,
+                "CNPJ_DEST": re.sub(r'\D', '', buscar_tag_recursiva('CNPJ', dest)),
+                "UF_EMIT": buscar_tag_recursiva('UF', emit),
+                "UF_DEST": buscar_tag_recursiva('UF', dest),
+                "CFOP": buscar_tag_recursiva('CFOP', prod),
+                "NCM": tratar_ncm_texto(buscar_tag_recursiva('NCM', prod)),
+                "VPROD": safe_float(buscar_tag_recursiva('vProd', prod)),
+                "ORIGEM": buscar_tag_recursiva('orig', icms_no),
                 "CST-ICMS": buscar_tag_recursiva('CST', icms_no) or buscar_tag_recursiva('CSOSN', icms_no),
-                "BC-ICMS": safe_float(buscar_tag_recursiva('vBC', icms_no)), "ALQ-ICMS": safe_float(buscar_tag_recursiva('pICMS', icms_no)),
-                "VLR-ICMS": safe_float(buscar_tag_recursiva('vICMS', icms_no)), "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', icms_no)),
-                "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', icms_no)), "IE_SUBST": str(buscar_tag_recursiva('IEST', icms_no)).strip(),
-                "ALQ-IPI": safe_float(buscar_tag_recursiva('pIPI', ipi_no)), "VLR-IPI": safe_float(buscar_tag_recursiva('vIPI', ipi_no)),
-                "CST-IPI": buscar_tag_recursiva('CST', ipi_no), "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
-                "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp)), "CST-PIS": buscar_tag_recursiva('CST', pis_no),
-                "VLR-PIS": safe_float(buscar_tag_recursiva('vPIS', pis_no)), "CST-COFINS": buscar_tag_recursiva('CST', cof_no),
-                "VLR-COFINS": safe_float(buscar_tag_recursiva('vCOFINS', cof_no)), "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
+                "BC-ICMS": safe_float(buscar_tag_recursiva('vBC', icms_no)),
+                "ALQ-ICMS": safe_float(buscar_tag_recursiva('pICMS', icms_no)),
+                "VLR-ICMS": safe_float(buscar_tag_recursiva('vICMS', icms_no)),
+                "BC-ICMS-ST": safe_float(buscar_tag_recursiva('vBCST', icms_no)),
+                "VAL-ICMS-ST": safe_float(buscar_tag_recursiva('vICMSST', icms_no)),
+                "IE_SUBST": str(buscar_tag_recursiva('IEST', icms_no)).strip(),
+                "ALQ-IPI": safe_float(buscar_tag_recursiva('pIPI', ipi_no)),
+                "VLR-IPI": safe_float(buscar_tag_recursiva('vIPI', ipi_no)),
+                "CST-IPI": buscar_tag_recursiva('CST', ipi_no),
+                "VAL-IBS": safe_float(buscar_tag_recursiva('vIBS', imp)),
+                "VAL-CBS": safe_float(buscar_tag_recursiva('vCBS', imp)),
+                "CST-PIS": buscar_tag_recursiva('CST', pis_no),
+                "VLR-PIS": safe_float(buscar_tag_recursiva('vPIS', pis_no)),
+                "CST-COFINS": buscar_tag_recursiva('CST', cof_no),
+                "VLR-COFINS": safe_float(buscar_tag_recursiva('vCOFINS', cof_no)),
+                "VAL-FCP": safe_float(buscar_tag_recursiva('vFCP', imp)),
                 "VAL-DIFAL": safe_float(buscar_tag_recursiva('vICMSUFDest', imp)) + safe_float(buscar_tag_recursiva('vFCPUFDest', imp)),
                 "VAL-FCP-DEST": safe_float(buscar_tag_recursiva('vFCPUFDest', imp))
             }
@@ -137,11 +151,11 @@ def extrair_dados_xml_recursivo(files, cnpj_empresa_auditada):
 def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_ret):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # 1. Aba Resumo (Geral)
+        # 1. Aba Resumo
         try: gerar_aba_resumo(writer)
         except Exception as e: st.warning(f"Aviso ao gerar aba resumo: {e}")
         
-        # 2. Chamada das Gerenciais (Audit Gerencial)
+        # 2. Chamada das Gerenciais (Módulo Externo)
         try: gerar_abas_gerenciais(writer, ge, gs)
         except Exception as e: st.error(f"Erro no módulo de gerenciais: {e}")
 
@@ -161,7 +175,6 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             
             df_xs['Situação Nota'] = df_xs['CHAVE_ACESSO'].map(st_map).fillna('⚠️ N/Encontrada')
             
-            # Chamada dos Auditores Especialistas
             processar_icms(df_xs, writer, cod_cliente, df_xe)
             processar_ipi(df_xs, writer, cod_cliente)
             processar_pc(df_xs, writer, cod_cliente, regime)
@@ -169,7 +182,7 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
             try: gerar_resumo_uf(df_xs, writer, df_xe)
             except: pass
             
-    # Lógica de clonagem e estilos para RET MG
+    # Lógica de clonagem para RET MG
     if is_ret:
         try:
             caminho_modelo = f"RET/{cod_cliente}-RET_MG.xlsx"
@@ -184,15 +197,11 @@ def gerar_excel_final(df_xe, df_xs, ae, as_f, ge, gs, cod_cliente, regime, is_re
                             for cell in row:
                                 new_cell = target.cell(row=cell.row, column=cell.column, value=cell.value)
                                 if cell.has_style:
-                                    new_cell.font = copy(cell.font)
-                                    new_cell.border = copy(cell.border)
-                                    new_cell.fill = copy(cell.fill)
-                                    new_cell.number_format = copy(cell.number_format)
-                                    new_cell.alignment = copy(cell.alignment)
+                                    new_cell.font, new_cell.border, new_cell.fill, new_cell.number_format, new_cell.alignment = copy(cell.font), copy(cell.border), copy(cell.fill), copy(cell.number_format), copy(cell.alignment)
                 output_ret = io.BytesIO()
                 wb_final.save(output_ret)
                 return output_ret.getvalue()
         except Exception as e:
-            st.error(f"Erro na integração com modelo RET MG: {e}")
+            st.error(f"Erro na integração RET MG: {e}")
 
     return output.getvalue()
